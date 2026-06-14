@@ -60,6 +60,9 @@ HAVE_DOT               = NO
 QUIET                  = YES
 WARNINGS               = YES
 WARN_IF_UNDOCUMENTED   = NO
+# Don't fail on functions that document some but not all @param/@return (partial coverage is
+# fine — FAIL_ON_WARNINGS still catches genuinely malformed/unknown doc commands). See issue #52.
+WARN_IF_INCOMPLETE_DOC = NO
 WARN_IF_DOC_ERROR      = YES
 WARN_NO_PARAMDOC       = NO
 # CI sets WARN_AS_ERROR on the command line (`-D WARN_AS_ERROR=FAIL_ON_WARNINGS`); kept off here
