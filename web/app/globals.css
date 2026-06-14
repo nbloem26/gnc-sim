@@ -462,3 +462,248 @@ button.primary:hover:not(:disabled) {
 .intro h1 {
   margin: 0 0 8px;
 }
+
+/* ---- Telemetry Explorer (issue #54) -------------------------------------- */
+.tx-root {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .tx-root {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Signal tree */
+.tx-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px;
+  max-height: 760px;
+}
+.tx-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.tx-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.tx-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.tx-tree-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+}
+.tx-group {
+  margin-bottom: 2px;
+}
+.tx-group-summary {
+  cursor: pointer;
+  padding: 4px 2px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--accent-2);
+  user-select: none;
+}
+.tx-group-summary:hover {
+  color: var(--accent);
+}
+.tx-sig-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 6px;
+}
+.tx-sig {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.tx-sig:hover {
+  background: #182230;
+  border-color: var(--border);
+}
+.tx-sig-on {
+  background: rgba(79, 209, 197, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Derived-signal box */
+.tx-derived {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.tx-derived-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tx-derived-row {
+  display: flex;
+  gap: 6px;
+}
+.tx-expr-err {
+  color: var(--err);
+  font-size: 11px;
+  margin: 4px 0 0;
+  font-family: ui-monospace, monospace;
+}
+
+/* Buttons */
+.tx-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tx-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tx-btn-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Panes */
+.tx-panes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.tx-panes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tx-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+.tx-pane-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tx-pane {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.tx-pane-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(79, 209, 197, 0.25);
+}
+.tx-pane-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.tx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 22px;
+  align-items: center;
+}
+.tx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 4px 2px 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  background: var(--bg);
+}
+.tx-chip-off {
+  opacity: 0.5;
+}
+.tx-chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid;
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.tx-chip-label {
+  color: var(--text);
+}
+.tx-chip-val {
+  color: var(--warn);
+  font-weight: 600;
+}
+.tx-chip-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tx-chip-x:hover {
+  color: var(--err);
+}
+.tx-pane-remove {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.tx-pane-remove:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+.tx-pane-plot {
+  width: 100%;
+  height: 240px;
+}

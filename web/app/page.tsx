@@ -22,6 +22,13 @@ const GroundTrack = dynamic(() => import('@/components/GroundTrack'), {
   loading: () => <div className="placeholder">Loading map…</div>,
 });
 
+// Telemetry Explorer instantiates Plotly imperatively per pane — load client-only
+// and only when its tab actually mounts (lazy via <Tabs>), so first load stays light.
+const TelemetryExplorer = dynamic(() => import('@/components/TelemetryExplorer'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading explorer…</div>,
+});
+
 export default function Home() {
   const [result, setResult] = useState<SimResult | null>(null);
   const [lastConfig, setLastConfig] = useState<SimConfig | null>(null);
@@ -96,6 +103,11 @@ export default function Home() {
         id: 'montecarlo',
         label: 'Monte Carlo',
         render: () => <MonteCarloPanel baseConfig={lastConfig} mock={mock} />,
+      },
+      {
+        id: 'explorer',
+        label: 'Telemetry Explorer',
+        render: () => <TelemetryExplorer result={result} />,
       },
       {
         id: 'validation',
