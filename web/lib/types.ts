@@ -74,6 +74,8 @@ export interface TargetConfig {
   maneuver: string;
   maneuver_g?: number;
   maneuver_freq?: number;
+  /** Phase offset [deg] into the weave maneuver cycle. Randomized per Monte Carlo case. */
+  maneuver_phase_deg?: number;
 }
 
 export interface MonteCarloConfig {
