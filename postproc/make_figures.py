@@ -39,6 +39,8 @@ WEB_FIGURES = [
     "validation_summary.png",
     "trajectory_sample.png",
     "fusion_track_error.png",
+    "uq_convergence.png",
+    "uq_sobol.png",
 ]
 
 
