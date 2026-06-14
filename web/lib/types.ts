@@ -99,6 +99,14 @@ export interface SimConfig {
   sensors: SensorsConfig;
   target: TargetConfig;
   monte_carlo?: MonteCarloConfig;
+  // Opt-in subsystem blocks carried verbatim from the canonical configs/*.json
+  // presets (EKF nav, multi-sensor fusion, decoy discrimination, launch cueing).
+  // The web form does not edit these; they pass straight through to the core.
+  schema_version?: number;
+  nav?: Record<string, unknown>;
+  trackers?: Record<string, unknown>;
+  decoys?: Record<string, unknown>;
+  cueing?: Record<string, unknown>;
 }
 
 // ----------------------------------------------------------------------------
@@ -119,6 +127,8 @@ export interface SimSeries {
   yaw: number[];
   mass: number[];
   mach: number[];
+  /** Motor thrust [N]. Present on boosting configs; `0` on coast/no-motor paths. */
+  thrust?: number[];
   tgt_x: number[];
   tgt_y: number[];
   tgt_z: number[];
@@ -143,6 +153,19 @@ export interface SimSeries {
   seeker_los_meas?: number[];
   /** EKF normalized innovation squared. Present only when an EKF filter is run. */
   nav_nis?: number[];
+  /**
+   * Fused multi-sensor target-track position estimate [m] (ENU). Populated only
+   * when `trackers.enabled`; `0` on every non-tracker path.
+   */
+  track_x?: number[];
+  track_y?: number[];
+  track_z?: number[];
+  /** Last fused sensor update's NIS. `0` on non-tracker paths. */
+  track_nis?: number[];
+  /** Seeker decoy-discrimination channels. Meaningful only when `decoys.enabled`. */
+  selected_obj?: number[];
+  discrim_correct?: number[];
+  discrim_margin?: number[];
 }
 
 export interface SimResult {
@@ -154,9 +177,26 @@ export interface SimResult {
   intercept: boolean;
   miss_distance: number;
   intercept_time: number;
+  /** Interceptor cue/launch time [s]. `0` on the default launch-at-t=0 path. */
+  launch_time?: number;
   git_sha: string;
   origin: OriginConfig;
   series: SimSeries;
+}
+
+// ----------------------------------------------------------------------------
+// Scenario presets (web/public/scenarios/index.json)
+// ----------------------------------------------------------------------------
+
+export interface ScenarioPreset {
+  id: string;
+  file: string;
+  label: string;
+  description: string;
+}
+
+export interface ScenarioManifest {
+  presets: ScenarioPreset[];
 }
 
 /** Shape returned by the WASM entry on failure. */

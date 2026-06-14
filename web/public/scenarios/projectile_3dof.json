@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "scenario": "ballistic",
+  "model": "3dof",
+  "seed": 1,
+  "dt": 0.005,
+  "t_end": 120.0,
+  "integrator": "rk4",
+  "env": { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": true },
+  "aero": {
+    "ref_area": 0.02,
+    "cd_mach": [[0.0,0.28],[0.7,0.30],[0.9,0.42],[1.0,0.58],[1.2,0.52],[1.5,0.43],[2.0,0.36],[3.0,0.30],[4.0,0.27]]
+  },
+  "vehicle": { "pos0": [0,0,0], "launch_speed": 600, "launch_elevation_deg": 45, "launch_azimuth_deg": 0, "mass0": 22.0 },
+  "guidance": { "law": "none" },
+  "sensors": { "enable": false },
+  "target": { "pos0": [50000,0,0], "vel0": [0,0,0], "maneuver": "constant" }
+}
