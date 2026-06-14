@@ -210,6 +210,22 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   frame/gravity geometry. J2 only (no higher-order geopotential, no third-body).
 - **References.** Vallado, *Fundamentals of Astrodynamics and Applications* (ECI/ECEF, J2, WGS-84).
 
+### `round` (hi-fi) — EGM gravity + extended atmosphere/winds + rotating ECEF
+
+- **Assumptions.** Opt-in fidelity layer on the round path (issue #41): truncated zonal
+  spherical-harmonic gravity (J2/J3/J4), an extended atmosphere above the USSA76 ceiling plus a
+  parameterized wind profile, and a full rotating-ECEF propagation option with explicit
+  Coriolis/centrifugal terms.
+- **Governing equations.** Zonal geopotential through J4; exponential/layered atmosphere
+  extension; ECEF EOM with `-2 omega x v - omega x (omega x r)`.
+- **Validity limits.** Reduced upper atmosphere (no F10.7/Ap/diurnal/seasonal terms — full
+  NRLMSISE-00 is a follow-up); zonal-only geopotential (no tesseral/sectoral, no third body). The
+  hi-fi round path is the unguided ballistic case, matching the base round path.
+- **Evidence.** `env_fidelity_test` (J2-only reduces to central+J2 bit-for-bit; WGS-84 surface
+  gravity pole>equator; vacuum energy drift 2.7e-7/orbit; atmosphere handover continuous; ECEF<->ECI
+  agree <1 m / <5 cm/s). Config `configs/ballistic_round_hifi.json`.
+- **References.** Vallado (geopotential, ECEF); *U.S. Standard Atmosphere 1976* (base atmosphere).
+
 ---
 
 ## Threats (target maneuver)
