@@ -141,6 +141,8 @@ export interface SimSeries {
   imu_gyro_meas_x?: number[];
   seeker_los_true?: number[];
   seeker_los_meas?: number[];
+  /** EKF normalized innovation squared. Present only when an EKF filter is run. */
+  nav_nis?: number[];
 }
 
 export interface SimResult {

@@ -1,15 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { SimConfig, SimResult } from '@/lib/types';
 import { runSim, isMockMode, isResolved, warmUp } from '@/lib/wasmRunner';
 import ParamForm from '@/components/ParamForm';
+import Tabs, { type TabDef } from '@/components/Tabs';
 import TrajectoryPlot from '@/components/TrajectoryPlot';
-import StatePlots from '@/components/StatePlots';
+import GuidancePanel from '@/components/GuidancePanel';
+import NavigationPanel from '@/components/NavigationPanel';
+import SensorsPanel from '@/components/SensorsPanel';
+import EnvironmentPanel from '@/components/EnvironmentPanel';
 import MonteCarloPanel from '@/components/MonteCarloPanel';
+import ValidationFigures from '@/components/ValidationFigures';
 
 // Ground track pulls in Leaflet (window-bound) — load client-only, no SSR.
+// It is also only imported when the Ground-track tab is actually mounted, so the
+// map never instantiates on first load.
 const GroundTrack = dynamic(() => import('@/components/GroundTrack'), {
   ssr: false,
   loading: () => <div className="placeholder">Loading map…</div>,
@@ -22,6 +29,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [mock, setMock] = useState(false);
   const [modeKnown, setModeKnown] = useState(false);
+  const [activeTab, setActiveTab] = useState('trajectory');
 
   // Warm the WASM module and resolve real-vs-mock on mount.
   useEffect(() => {
@@ -46,6 +54,56 @@ export default function Home() {
       setRunning(false);
     }
   }
+
+  // Tab definitions. Each `render()` is invoked lazily by <Tabs> — only the
+  // active tab's Plotly/Leaflet components ever mount. This keeps the page from
+  // instantiating every chart at once on load (which triggered the Canvas2D
+  // readback storm + setTimeout-handler violation).
+  const tabs = useMemo<TabDef[]>(() => {
+    if (!result) return [];
+    return [
+      {
+        id: 'trajectory',
+        label: 'Trajectory',
+        render: () => <TrajectoryPlot result={result} />,
+      },
+      {
+        id: 'guidance',
+        label: 'Guidance',
+        render: () => <GuidancePanel result={result} />,
+      },
+      {
+        id: 'navigation',
+        label: 'Navigation',
+        render: () => <NavigationPanel result={result} />,
+      },
+      {
+        id: 'sensors',
+        label: 'Sensors',
+        render: () => <SensorsPanel result={result} />,
+      },
+      {
+        id: 'environment',
+        label: 'Environment / Aero',
+        render: () => <EnvironmentPanel result={result} />,
+      },
+      {
+        id: 'groundtrack',
+        label: 'Ground Track',
+        render: () => <GroundTrack result={result} />,
+      },
+      {
+        id: 'montecarlo',
+        label: 'Monte Carlo',
+        render: () => <MonteCarloPanel baseConfig={lastConfig} mock={mock} />,
+      },
+      {
+        id: 'validation',
+        label: 'Validation',
+        render: () => <ValidationFigures />,
+      },
+    ];
+  }, [result, lastConfig, mock]);
 
   return (
     <>
@@ -85,9 +143,7 @@ export default function Home() {
           ) : null}
 
           {!result ? (
-            <div className="card placeholder">
-              Run a simulation to see results.
-            </div>
+            <div className="card placeholder">Run a simulation to see results.</div>
           ) : (
             <>
               <div className="card">
@@ -120,20 +176,7 @@ export default function Home() {
               </div>
 
               <div className="card">
-                <TrajectoryPlot result={result} />
-              </div>
-
-              <div className="grid2">
-                <div className="card">
-                  <StatePlots result={result} />
-                </div>
-                <div className="card">
-                  <GroundTrack result={result} />
-                </div>
-              </div>
-
-              <div className="card">
-                <MonteCarloPanel baseConfig={lastConfig} mock={mock} />
+                <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
               </div>
             </>
           )}
