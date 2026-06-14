@@ -50,7 +50,7 @@ and re-baseline golden runs in the same change.
 | `matlab/` | Reference analysis scripts (Octave fallback). Not CI-executed. |
 | `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `THEORY.md` (the math behind every shipped model + worked CLI/SDK example), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence), `Doxyfile` (C++ API reference — `doxygen docs/Doxyfile`). |
 | `bindings/` | Python SDK (pybind11): `gncsim.run` / `gncsim.monte_carlo` → numpy. `bindings/README.md` is the API reference; built by `scripts/build-python.sh`. |
-| `scripts/` | `build-native.sh`, `build-wasm.sh`, `build-python.sh`, `parity-check.mjs`. |
+| `scripts/` | `build-native.sh`, `build-wasm.sh`, `build-python.sh`, `parity-check.mjs`, `determinism-guard.mjs` (fast-tier parity guard, see *Tiered model fidelity*). |
 
 ## Build / test / run — exact commands
 
@@ -130,6 +130,25 @@ traceable evidence:
 New-model PRs **must add a V&V-matrix row** (and a `docs/MODELS.md` page) — see the PR-workflow
 note below.
 
+## Tiered model fidelity + determinism guard (see issue #50)
+
+Every registry model is classified **fast** (WASM-safe, interactive) or **hi-fi** (high-fidelity
+native) in the authoritative manifest [`configs/tiers.json`](configs/tiers.json):
+
+- **fast tier = parity-guaranteed.** `scripts/determinism-guard.mjs` runs *every* `fast_tier_configs`
+  entry through the native↔WASM comparison (`|Δ| = 0` within parity tolerance) and asserts every
+  fast-tier model is exercised by at least one of those configs — so **parity coverage tracks the
+  fast-tier model set**. It is wired into CI as a step of the `wasm-web` job.
+- **hi-fi tier = golden-checked.** The `hifi_configs` (e.g. `6dof_hifi`, EGM/extended-atmosphere
+  round Earth, radar/IR phenomenology) are baselined in `postproc/gncpost/golden.py`.
+- `postproc/tests/test_tiers.py` cross-checks the manifest against the shipped model set in
+  `pytest` (no WASM build needed): a shipped model with no tier, a fast model with no parity config,
+  or a hi-fi config that isn't a golden case **fails CI**.
+
+The formalized fast/hi-fi pairs (`6dof`↔`6dof_hifi`, `ekf`↔`imm`, `radar`↔`radar_pheno`,
+`round`↔`round`+EGM) and the full guarantee table live in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §*Tiered model fidelity*.
+
 ## Naming conventions — units in variable names (see issue #69)
 
 **Physical-quantity variables MUST carry an explicit SI unit suffix.** Units belong in the name, not
@@ -180,7 +199,11 @@ under #69 (Phase 1 = this rule; Phase 2 = internal sweep; Phase 3 = optional con
   `postproc/tests/test_vnv_matrix.py` (`python -m gncpost.vnv`) cross-checks the matrix against the
   shipped model set and **fails CI** if a shipped model has no row, or a row names a missing golden
   key / benchmark file. See *Model credibility* below. (This is the expectation referenced
-  elsewhere as "once #34 exists".)
+  elsewhere as "once #34 exists".) You **must** also (3) **classify the model in
+  [`configs/tiers.json`](configs/tiers.json)** — fast (add/extend a `fast_tier_configs` entry + its
+  `config_models` list so the determinism guard parity-covers it) or hi-fi (add it to `golden.py`
+  `CANONICAL`, re-baseline). `postproc/tests/test_tiers.py` and `scripts/determinism-guard.mjs`
+  **fail CI** otherwise. See *Tiered model fidelity* above.
 
 ## Known issues / gotchas (open tickets)
 
