@@ -186,6 +186,46 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build-asan --output-on-failure
 
+  fmi-cosim:
+    name: FMI 2.0 co-sim FMU (build + package + master bit-match)
+    runs-on: ubuntu-latest
+    # ADDITIVE (issue #44): builds behind -DGNCSIM_BUILD_FMI=ON in a separate build dir, so the
+    # default `native` job is untouched. Builds the co-sim slave + the modelDescription.xml
+    # generator, packages the .fmu, validates the descriptor is well-formed XML, and runs the
+    # in-repo master test that dlopen()s the slave and asserts its streamed outputs bit-match
+    # runSimulation(). The master test is also wired into this build's CTest.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential clang-tidy zip unzip
+      - name: Build with FMI co-simulation export
+        run: |
+          cmake -S . -B build-fmi -DCMAKE_BUILD_TYPE=Release -DGNCSIM_BUILD_FMI=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build-fmi -j"$(nproc)"
+      - name: clang-tidy the FMI sources (warnings-as-errors)
+        run: |
+          clang-tidy -p build-fmi --warnings-as-errors='*' \
+            fmi/src/GncsimFmu.cpp fmi/src/GenerateModelDescription.cpp fmi/master/FmiMaster.cpp
+      - name: Validate modelDescription.xml is well-formed
+        run: python -c "import xml.dom.minidom as m; m.parse('build-fmi/fmi/modelDescription.xml'); print('modelDescription.xml OK')"
+      - name: Package the .fmu
+        run: ./fmi/scripts/package_fmu.sh build-fmi build-fmi/gncsim.fmu
+      - name: FMU master test (bit-match vs runSimulation)
+        run: ctest --test-dir build-fmi -R fmi_master_test --output-on-failure
+      - name: Master test against the PACKAGED .fmu binary
+        run: |
+          mkdir -p fmu-extract
+          (cd fmu-extract && unzip -q ../build-fmi/gncsim.fmu)
+          ./build-fmi/fmi/fmi_master fmu-extract/binaries/linux64/gncsim.so
+      - name: Upload FMU artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: gncsim-fmu
+          path: build-fmi/gncsim.fmu
+
   clang-tidy:
     name: clang-tidy (core + apps/cli)
     runs-on: ubuntu-latest
