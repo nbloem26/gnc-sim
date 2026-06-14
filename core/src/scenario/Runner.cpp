@@ -22,6 +22,7 @@
 #include "gncsim/env/EnvFidelity.hpp"
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/env/Frames.hpp"
+#include "gncsim/gnc/DataAssociation.hpp"
 #include "gncsim/gnc/Discriminator.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
@@ -35,6 +36,23 @@ namespace gncsim {
 namespace {
 
 constexpr double kLethalRadius = 3.0;  // intercept if closest approach is within this [m]
+
+// Poisson(mean) draw via Knuth's multiplicative algorithm on the project Rng (one uniform per
+// accepted increment; no std distribution, fixed FP order -> native<->WASM identical). Used only by
+// the opt-in JPDA clutter model (issue #38), so the default RNG draw order is untouched. Capped so
+// a pathological mean cannot spin forever.
+int poissonSample(double mean, Rng& rng) {
+  if (mean <= 0.0) return 0;
+  const double l = std::exp(-mean);
+  int k = 0;
+  double p = 1.0;
+  const int kMaxClutter = 64;
+  do {
+    ++k;
+    p *= rng.uniform(0.0, 1.0);
+  } while (p > l && k < kMaxClutter);
+  return k - 1;
+}
 
 // APN target-acceleration estimator ceiling [m/s^2] ≈ 6 g. A real maneuvering target cannot pull
 // much more than this; the cap rejects the large spurious accelerations that differentiating a
@@ -608,6 +626,45 @@ SimResult runSimulation(const SimConfig& cfg) {
     track_ekf.bootstrap(tgt.pos, tgt.vel);
   }
 
+  // --- Multi-target data association (issue #38): opt-in JPDA mode -------------------------------
+  // Selected by trackers.association.mode == "jpda". When ACTIVE, every sensor look yields a SET of
+  // detections (true-target return + one per closely-spaced object + Poisson clutter), the Runner
+  // gates+weights them with JPDA against a PER-SENSOR confirmed track, governs each track with an
+  // M-of-N lifecycle, and fuses the per-sensor tracks track-to-track with Covariance Intersection.
+  // The CI-fused position drives guidance (and the track_pos_est telemetry), reusing the #5 field.
+  // The default associator ("none") leaves the issue-#5 single-target fusion path byte-identical
+  // and draws no extra RNG — the whole JPDA branch is unreachable unless explicitly opted in.
+  const bool use_jpda = use_trackers && cfg.trackers.association.mode == "jpda";
+  const TrackAssociationConfig& assoc = cfg.trackers.association;
+  std::vector<TargetTrackEkf> jpda_ekf;   // one confirmed track per sensor
+  std::vector<TrackLifecycle> jpda_life;  // its M-of-N lifecycle
+  std::vector<EntityState> cso_scene;     // closely-spaced objects (decoys) to reject
+  std::int64_t jpda_assoc_hits = 0;       // looks where the best-beta detection was target
+  std::int64_t jpda_assoc_total = 0;      // looks with at least one gated detection
+  if (use_jpda) {
+    const JpdaParams jp{assoc.prob_detect, assoc.gate_chi2, assoc.clutter_density};
+    (void)jp;
+    const TrackLifecycleParams lp{assoc.confirm_m, assoc.confirm_n, assoc.delete_misses};
+    jpda_ekf.reserve(track_sensors.size());
+    jpda_life.reserve(track_sensors.size());
+    for (std::size_t s = 0; s < track_sensors.size(); ++s) {
+      TargetTrackEkf e(cfg.dt, cfg.trackers.process_psd);
+      e.bootstrap(tgt.pos, tgt.vel, assoc.init_pos_sigma_m, assoc.init_vel_sigma_mps);
+      jpda_ekf.push_back(e);
+      jpda_life.emplace_back(lp);
+    }
+    // Closely-spaced objects: a kinematic cluster about the true target (no feature signature; the
+    // associator is purely kinematic). Drawn once here — opt-in, so default RNG order is untouched.
+    const int n_cso = std::max(assoc.num_cso, 0);
+    cso_scene.reserve(static_cast<std::size_t>(n_cso));
+    for (int k = 0; k < n_cso; ++k) {
+      EntityState o = tgt;
+      o.pos = tgt.pos + rng.gaussianVec(assoc.cso_separation_m);
+      o.vel = tgt.vel + rng.gaussianVec(assoc.cso_separation_m * 0.02);
+      cso_scene.push_back(o);
+    }
+  }
+
   // --- Decoy / closely-spaced-object discrimination (issue #6): opt-in ---
   // When enabled, build a multi-object scene (true target at index 0 + N decoys) and a
   // feature-based discriminator. Each step the seeker measures every object's features (noisily),
@@ -706,6 +763,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     double seeker_los_meas = truth.los_angle;
     double nav_nis = 0.0;
     Vector3 track_pos_est;  // fused absolute target-position estimate (issue #5); 0 when disabled
+    Vector3 track_vel_est;  // fused absolute target-velocity estimate; drives guidance + cueing
     double track_nis = 0.0;
 
     if (use_trackers) {
@@ -713,17 +771,103 @@ SimResult runSimulation(const SimConfig& cfg) {
       // noisy measurement from each fixed sensor (radar [az,el,range,range_rate] / IR [az,el]).
       // Guidance below uses the fused absolute target estimate relative to the vehicle. RNG is
       // drawn only here (this whole branch is unreachable on the default path).
-      track_ekf.predict();
-      for (const auto& s : track_sensors) {
-        // detect() gates the measurement on a CFAR detection for phenomenology sensors; for the
-        // plain radar/ir sensors it always detects and delegates to measure() with the same RNG
-        // draws, so the existing fusion path stays byte-identical. On a missed look the tracker
-        // coasts (no update this step for that sensor).
-        const SensorDetection det = s->detect(tgt.pos, tgt.vel, rng);
-        if (det.detected) track_nis = track_ekf.update(s->spec(), det.z);
+      if (!use_jpda) {
+        track_ekf.predict();
+        for (const auto& s : track_sensors) {
+          // detect() gates the measurement on a CFAR detection for phenomenology sensors; for the
+          // plain radar/ir sensors it always detects and delegates to measure() with the same RNG
+          // draws, so the existing fusion path stays byte-identical. On a missed look the tracker
+          // coasts (no update this step for that sensor).
+          const SensorDetection det = s->detect(tgt.pos, tgt.vel, rng);
+          if (det.detected) track_nis = track_ekf.update(s->spec(), det.z);
+        }
+        track_pos_est = track_ekf.pos();
+        track_vel_est = track_ekf.vel();
+        nav_nis = track_nis;
+      } else {
+        // ── JPDA multi-target data-association path (issue #38) ──────────────────────────────────
+        // For each sensor: predict its track, build a detection set (true-target return + one per
+        // CSO + Poisson clutter), associate with JPDA + lifecycle, then fuse the per-sensor tracks
+        // track-to-track by Covariance Intersection. Guidance uses the CI-fused absolute estimate.
+        bool any_assoc_target = false;
+        bool any_gated = false;
+        for (std::size_t si = 0; si < track_sensors.size(); ++si) {
+          const ISensor& sensor = *track_sensors[si];
+          jpda_ekf[si].predict();
+
+          // (1) True-target return (CFAR-gated for *_pheno sensors; always for plain radar/ir).
+          std::vector<AssocDetection> dets;
+          const SensorDetection td = sensor.detect(tgt.pos, tgt.vel, rng);
+          if (td.detected) dets.push_back(AssocDetection{td.z, /*from_target_truth=*/true});
+
+          // (2) One return per closely-spaced object (same measurement model, not the target).
+          for (const EntityState& o : cso_scene) {
+            const std::vector<double> z = sensor.measure(o.pos, o.vel, rng);
+            dets.push_back(AssocDetection{z, /*from_target_truth=*/false});
+          }
+
+          // (3) Poisson clutter false alarms scattered (uniformly via the Rng) about the predicted
+          // track measurement. The count is a Poisson(clutter_rate) draw (Knuth) from the run Rng.
+          const int n_clutter = poissonSample(assoc.clutter_rate, rng);
+          if (n_clutter > 0) {
+            const std::vector<double> z_track = sensor.measure(tgt.pos, tgt.vel, rng);
+            const int mdim = sensor.spec().dim();
+            for (int c = 0; c < n_clutter; ++c) {
+              std::vector<double> z = z_track;
+              z[0] += rng.uniform(-assoc.clutter_az_spread_rad, assoc.clutter_az_spread_rad);
+              z[1] += rng.uniform(-assoc.clutter_az_spread_rad, assoc.clutter_az_spread_rad);
+              if (mdim == 4) {
+                z[2] += rng.uniform(-assoc.clutter_range_spread_m, assoc.clutter_range_spread_m);
+              }
+              dets.push_back(AssocDetection{z, /*from_target_truth=*/false});
+            }
+          }
+
+          // (4) Associate + update; (5) lifecycle on whether any detection was associated.
+          const JpdaParams jp{assoc.prob_detect, assoc.gate_chi2, assoc.clutter_density};
+          const JpdaResult jr = jpdaAssociateAndUpdate(jpda_ekf[si], sensor.spec(), dets, jp);
+          jpda_life[si].update(jr.any_gated);
+          if (jr.any_gated) {
+            any_gated = true;
+            track_nis = jr.nis;
+            if (jr.best_is_target) any_assoc_target = true;
+          }
+        }
+
+        // Track purity bookkeeping: a look "scores" when at least one sensor gated a detection; it
+        // is "pure" when the highest-probability gated detection truly came from the target.
+        if (any_gated) {
+          ++jpda_assoc_total;
+          if (any_assoc_target) ++jpda_assoc_hits;
+        }
+
+        // Track-to-track fusion (Covariance Intersection) across the per-sensor confirmed tracks.
+        TrackEstimate fused;
+        bool have_fused = false;
+        for (std::size_t si = 0; si < jpda_ekf.size(); ++si) {
+          if (jpda_life[si].status() == TrackStatus::Deleted) continue;
+          TrackEstimate te;
+          const Vector3 p = jpda_ekf[si].pos();
+          const Vector3 v = jpda_ekf[si].vel();
+          te.x = {p.x, p.y, p.z, v.x, v.y, v.z};
+          for (int a = 0; a < 6; ++a)
+            for (int b = 0; b < 6; ++b) te.p[a * 6 + b] = jpda_ekf[si].cov(a, b);
+          if (!have_fused) {
+            fused = te;
+            have_fused = true;
+          } else {
+            fused = covarianceIntersection(fused, te);
+          }
+        }
+        if (have_fused) {
+          track_pos_est = Vector3{fused.x[0], fused.x[1], fused.x[2]};
+          track_vel_est = Vector3{fused.x[3], fused.x[4], fused.x[5]};
+        } else {
+          track_pos_est = jpda_ekf.empty() ? tgt.pos : jpda_ekf[0].pos();
+          track_vel_est = jpda_ekf.empty() ? tgt.vel : jpda_ekf[0].vel();
+        }
+        nav_nis = track_nis;
       }
-      track_pos_est = track_ekf.pos();
-      nav_nis = track_nis;
 
       // --- Launch-on-track (issue #8): fire the launch once the criterion is met ---
       // Criterion: fused-track position-covariance trace below the threshold (a confident track),
@@ -731,21 +875,25 @@ SimResult runSimulation(const SimConfig& cfg) {
       // and aim the interceptor via a constant-velocity lead solution from the current track
       // estimate (loft added). Only reachable on the opt-in cueing path.
       if (use_cueing && !launched) {
+        // On the JPDA path there is no single legacy-track covariance; the first per-sensor track's
+        // trace stands in for the cue-readiness criterion (cueing+jpda is an uncommon combination).
+        const double cov_trace =
+            use_jpda ? (jpda_ekf.empty() ? 0.0 : jpda_ekf[0].covTrace()) : track_ekf.covTrace();
         const bool cov_ready = cfg.cueing.launch_criterion == "track_cov" &&
-                               track_ekf.covTrace() < cfg.cueing.cov_trace_threshold;
+                               cov_trace < cfg.cueing.cov_trace_threshold;
         const bool timed_out = t >= cfg.cueing.max_cue_time;
         if (cov_ready || timed_out) {
           launched = true;
           launch_time = t;
-          veh.vel = leadIntercept(veh.pos, cfg.vehicle.launch_speed, track_ekf.pos(),
-                                  track_ekf.vel(), cfg.cueing.loft_deg);
+          veh.vel = leadIntercept(veh.pos, cfg.vehicle.launch_speed, track_pos_est, track_vel_est,
+                                  cfg.cueing.loft_deg);
           if (is6dof && veh.vel.norm() > 1e-6) veh.att = quatFromTo({1, 0, 0}, veh.vel);
         }
       }
 
       EntityState veh_est = veh, tgt_est = tgt;
-      tgt_est.pos = track_ekf.pos();
-      tgt_est.vel = track_ekf.vel();
+      tgt_est.pos = track_pos_est;
+      tgt_est.vel = track_vel_est;
       est = computeEngagement(veh_est, tgt_est);
     } else if (use_ekf) {
       // EKF path: az/el/range measurement of the relative position (truth when sensors disabled,
@@ -1006,6 +1154,18 @@ SimResult runSimulation(const SimConfig& cfg) {
       }
     }
 
+    // --- Propagate the JPDA closely-spaced-object scene (issue #38) ---
+    // Each CSO flies ballistically (gravity, no maneuver) and drifts away from the warhead, so the
+    // returns separate over time — the data-association problem the JPDA tracker must solve. No RNG
+    // drawn here (parity-safe).
+    if (use_jpda && !cso_scene.empty()) {
+      const Vector3 g_cso = environment->gravity(tgt.pos);
+      for (EntityState& o : cso_scene) {
+        o.vel += g_cso * cfg.dt;
+        o.pos += o.vel * cfg.dt;
+      }
+    }
+
     // Propagate the vehicle only after launch — during cueing PHASE 1 it stays parked at the launch
     // site (zero velocity, no forces integrated). The target/track/decoy scene above keep advancing
     // so the threat closes in while the launch criterion is being evaluated.
@@ -1025,6 +1185,9 @@ SimResult runSimulation(const SimConfig& cfg) {
   r.intercept_time = best_t;
   r.launch_time = launch_time;
   r.intercept = best_range < kLethalRadius;
+  r.track_purity = jpda_assoc_total > 0 ? static_cast<double>(jpda_assoc_hits) /
+                                              static_cast<double>(jpda_assoc_total)
+                                        : 1.0;
   return r;
 }
 

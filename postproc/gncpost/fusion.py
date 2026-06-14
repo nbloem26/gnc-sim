@@ -41,6 +41,12 @@ CASES = [
     ("radar-only", "track_radar_only.json"),
     ("IR-only", "track_ir_only.json"),
     ("fused", "track_fused.json"),
+    # Multi-target data association (issue #38): the same radar+IR geometry but with the JPDA
+    # associator rejecting a closely-spaced-object cluster + Poisson clutter. The fused track RMS
+    # stays in the same metres-class band as `fused` despite the decoys/clutter — i.e. the
+    # associator keeps the true track. (Per-clutter-density track PURITY is quantified
+    # deterministically by the C++ `data_association_test` benchmark.)
+    ("jpda", "track_jpda.json"),
 ]
 
 
@@ -97,7 +103,7 @@ def plot_fusion(results: list[FusionResult]):
 
     labels = [r.label for r in results]
     rmss = [r.rms for r in results]
-    colors = ["#5a8fc4", "#c4a24d", "#3f6e5c"]
+    colors = ["#5a8fc4", "#c4a24d", "#3f6e5c", "#a4565a"]
     bars = ax_bar.bar(labels, rmss, color=colors[: len(results)])
     ax_bar.set_ylabel("RMS track-position error [m]")
     ax_bar.set_title("Fusion beats either single sensor", fontweight="bold")

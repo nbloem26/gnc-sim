@@ -346,6 +346,28 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         c.trackers.sensors.push_back(sc);
       }
     }
+    // --- Multi-target data association (issue #38); only consulted when mode == "jpda" ---
+    if (tr.contains("association") && tr["association"].is_object()) {
+      const auto& as = tr["association"];
+      auto& a = c.trackers.association;
+      a.mode = get_or<std::string>(as, "mode", a.mode);
+      if (a.mode != "jpda") a.mode = "none";  // tolerant: unknown mode -> legacy single-target path
+      a.prob_detect = get_or<double>(as, "prob_detect", a.prob_detect);
+      a.gate_chi2 = get_or<double>(as, "gate_chi2", a.gate_chi2);
+      a.clutter_density = get_or<double>(as, "clutter_density", a.clutter_density);
+      a.clutter_rate = get_or<double>(as, "clutter_rate", a.clutter_rate);
+      a.clutter_az_spread_rad =
+          get_or<double>(as, "clutter_az_spread_rad", a.clutter_az_spread_rad);
+      a.clutter_range_spread_m =
+          get_or<double>(as, "clutter_range_spread_m", a.clutter_range_spread_m);
+      a.confirm_m = get_or<int>(as, "confirm_m", a.confirm_m);
+      a.confirm_n = get_or<int>(as, "confirm_n", a.confirm_n);
+      a.delete_misses = get_or<int>(as, "delete_misses", a.delete_misses);
+      a.num_cso = get_or<int>(as, "num_cso", a.num_cso);
+      a.cso_separation_m = get_or<double>(as, "cso_separation_m", a.cso_separation_m);
+      a.init_pos_sigma_m = get_or<double>(as, "init_pos_sigma_m", a.init_pos_sigma_m);
+      a.init_vel_sigma_mps = get_or<double>(as, "init_vel_sigma_mps", a.init_vel_sigma_mps);
+    }
   }
 
   if (j.contains("decoys")) {

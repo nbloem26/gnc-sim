@@ -91,6 +91,26 @@ void TargetTrackEkf::bootstrap(const Vector3& pos, const Vector3& vel) {
   nis_ = 0.0;
 }
 
+void TargetTrackEkf::bootstrap(const Vector3& pos, const Vector3& vel, double pos_sigma_m,
+                               double vel_sigma_mps) {
+  x_[0] = pos.x;
+  x_[1] = pos.y;
+  x_[2] = pos.z;
+  x_[3] = vel.x;
+  x_[4] = vel.y;
+  x_[5] = vel.z;
+
+  for (int k = 0; k < 36; ++k) p_[k] = 0.0;
+  auto P0 = [&](int idx) -> double& { return p_[idx * 6 + idx]; };
+  const double pos_var = pos_sigma_m * pos_sigma_m;
+  const double vel_var = vel_sigma_mps * vel_sigma_mps;
+  P0(0) = P0(1) = P0(2) = pos_var;
+  P0(3) = P0(4) = P0(5) = vel_var;
+
+  initialized_ = true;
+  nis_ = 0.0;
+}
+
 double TargetTrackEkf::covTrace() const {
   double s = 0.0;
   for (int i = 0; i < 6; ++i) s += p_[i * 6 + i];
@@ -332,6 +352,262 @@ double TargetTrackEkf::update(const TrackSensor& sensor, const std::vector<doubl
     }
   }
   for (int k = 0; k < 36; ++k) p_[k] = APAt[k] + KRKt[k];
+
+  return nis_;
+}
+
+// ── Innovation / gating quantities for one candidate detection (no state change) ─────────────────
+bool TargetTrackEkf::innovation(const TrackSensor& sensor, const std::vector<double>& z,
+                                std::array<double, 4>& y, std::array<double, 16>& s_inv, int& m,
+                                double& nis, double* gauss_likelihood) const {
+  if (!initialized_) return false;
+  m = sensor.dim();
+  if (static_cast<int>(z.size()) < m) return false;
+
+  std::array<double, 4> h{};
+  std::array<double, 24> H{};  // m x 6
+  int dim = 0;
+  measurementModel(sensor, h, H, dim);
+
+  std::array<double, 4> r_diag{};
+  r_diag[0] = sensor.sigma_az * sensor.sigma_az;
+  r_diag[1] = sensor.sigma_el * sensor.sigma_el;
+  if (m == 4) {
+    r_diag[2] = sensor.sigma_range * sensor.sigma_range;
+    r_diag[3] = sensor.sigma_range_rate * sensor.sigma_range_rate;
+  }
+
+  auto P = [&](int row, int col) -> double { return p_[row * 6 + col]; };
+
+  // PHt = P H^T (6 x m), S = H PHt + R (m x m).
+  std::array<double, 24> PHt{};
+  for (int i = 0; i < 6; ++i) {
+    for (int k = 0; k < m; ++k) {
+      double s = 0.0;
+      for (int j = 0; j < 6; ++j) s += P(i, j) * H[k * 6 + j];
+      PHt[i * m + k] = s;
+    }
+  }
+  std::array<double, 16> S{};
+  for (int a = 0; a < m; ++a) {
+    for (int b = 0; b < m; ++b) {
+      double s = 0.0;
+      for (int j = 0; j < 6; ++j) s += H[a * 6 + j] * PHt[j * m + b];
+      S[a * m + b] = s;
+    }
+    S[a * m + a] += r_diag[a];
+  }
+
+  // det(S) via the same Gauss-Jordan elimination used for the inverse (accumulate pivots).
+  std::array<double, 16> work = S;
+  double det = 1.0;
+  {
+    for (int col = 0; col < m; ++col) {
+      int pivot = col;
+      double best = std::fabs(work[col * m + col]);
+      for (int r = col + 1; r < m; ++r) {
+        const double v = std::fabs(work[r * m + col]);
+        if (v > best) {
+          best = v;
+          pivot = r;
+        }
+      }
+      if (best < 1e-300) return false;
+      if (pivot != col) {
+        det = -det;
+        for (int k = 0; k < m; ++k) std::swap(work[col * m + k], work[pivot * m + k]);
+      }
+      const double diag = work[col * m + col];
+      det *= diag;
+      const double inv_diag = 1.0 / diag;
+      for (int r = col + 1; r < m; ++r) {
+        const double factor = work[r * m + col] * inv_diag;
+        if (factor == 0.0) continue;
+        for (int k = col; k < m; ++k) work[r * m + k] -= factor * work[col * m + k];
+      }
+    }
+  }
+
+  s_inv = S;
+  if (!invertMxM(s_inv, m)) return false;
+
+  // Innovation y = z - h(x), az/el wrapped.
+  y = {};
+  y[0] = wrapPi(z[0] - h[0]);
+  y[1] = wrapPi(z[1] - h[1]);
+  if (m == 4) {
+    y[2] = z[2] - h[2];
+    y[3] = z[3] - h[3];
+  }
+
+  // NIS = y^T S^{-1} y.
+  double q = 0.0;
+  for (int a = 0; a < m; ++a) {
+    double s = 0.0;
+    for (int b = 0; b < m; ++b) s += s_inv[a * m + b] * y[b];
+    q += y[a] * s;
+  }
+  nis = q;
+
+  if (gauss_likelihood != nullptr) {
+    // Unnormalized Gaussian likelihood N(y; 0, S) = exp(-NIS/2) / sqrt((2*pi)^m det S).
+    if (det <= 0.0) {
+      *gauss_likelihood = 0.0;
+    } else {
+      const double two_pi = 2.0 * kPi;
+      double norm = 1.0;
+      for (int k = 0; k < m; ++k) norm *= two_pi;
+      norm *= det;
+      *gauss_likelihood = std::exp(-0.5 * q) / std::sqrt(norm);
+    }
+  }
+  return true;
+}
+
+// ── PDA combined update from several gated measurements ──────────────────────────────────────────
+double TargetTrackEkf::updatePda(const TrackSensor& sensor,
+                                 const std::vector<std::vector<double>>& gated,
+                                 const std::vector<double>& betas, double beta0) {
+  if (!initialized_ || gated.empty() || gated.size() != betas.size()) {
+    nis_ = 0.0;
+    return 0.0;
+  }
+  const int m = sensor.dim();
+
+  std::array<double, 4> h{};
+  std::array<double, 24> H{};  // m x 6
+  int dim = 0;
+  measurementModel(sensor, h, H, dim);
+
+  std::array<double, 4> r_diag{};
+  r_diag[0] = sensor.sigma_az * sensor.sigma_az;
+  r_diag[1] = sensor.sigma_el * sensor.sigma_el;
+  if (m == 4) {
+    r_diag[2] = sensor.sigma_range * sensor.sigma_range;
+    r_diag[3] = sensor.sigma_range_rate * sensor.sigma_range_rate;
+  }
+
+  auto P = [&](int row, int col) -> double { return p_[row * 6 + col]; };
+
+  // PHt = P H^T (6 x m), S = H PHt + R (m x m), Sinv.
+  std::array<double, 24> PHt{};
+  for (int i = 0; i < 6; ++i) {
+    for (int k = 0; k < m; ++k) {
+      double s = 0.0;
+      for (int j = 0; j < 6; ++j) s += P(i, j) * H[k * 6 + j];
+      PHt[i * m + k] = s;
+    }
+  }
+  std::array<double, 16> S{};
+  for (int a = 0; a < m; ++a) {
+    for (int b = 0; b < m; ++b) {
+      double s = 0.0;
+      for (int j = 0; j < 6; ++j) s += H[a * 6 + j] * PHt[j * m + b];
+      S[a * m + b] = s;
+    }
+    S[a * m + a] += r_diag[a];
+  }
+  std::array<double, 16> Sinv = S;
+  if (!invertMxM(Sinv, m)) {
+    nis_ = 0.0;
+    return 0.0;
+  }
+
+  // Kalman gain K = PHt Sinv (6 x m).
+  std::array<double, 24> K{};
+  for (int i = 0; i < 6; ++i) {
+    for (int b = 0; b < m; ++b) {
+      double s = 0.0;
+      for (int a = 0; a < m; ++a) s += PHt[i * m + a] * Sinv[a * m + b];
+      K[i * m + b] = s;
+    }
+  }
+
+  // Per-detection innovations y_j (az/el wrapped) and the beta-combined innovation ybar.
+  const std::size_t n = gated.size();
+  std::vector<std::array<double, 4>> ys(n, std::array<double, 4>{});
+  std::array<double, 4> ybar{};
+  for (std::size_t j = 0; j < n; ++j) {
+    const std::vector<double>& z = gated[j];
+    if (static_cast<int>(z.size()) < m) continue;
+    std::array<double, 4>& yj = ys[j];
+    yj[0] = wrapPi(z[0] - h[0]);
+    yj[1] = wrapPi(z[1] - h[1]);
+    if (m == 4) {
+      yj[2] = z[2] - h[2];
+      yj[3] = z[3] - h[3];
+    }
+    for (int a = 0; a < m; ++a) ybar[a] += betas[j] * yj[a];
+  }
+
+  // PDA state update: x += K ybar.
+  for (int i = 0; i < 6; ++i) {
+    double s = 0.0;
+    for (int a = 0; a < m; ++a) s += K[i * m + a] * ybar[a];
+    x_[i] += s;
+  }
+
+  // Combined-innovation NIS = ybar^T Sinv ybar.
+  double nis = 0.0;
+  for (int a = 0; a < m; ++a) {
+    double s = 0.0;
+    for (int b = 0; b < m; ++b) s += Sinv[a * m + b] * ybar[b];
+    nis += ybar[a] * s;
+  }
+  nis_ = nis;
+
+  // PDA covariance (Bar-Shalom): P = P0 - (1-beta0) dP + Ptilde, where
+  //   dP    = K S K^T          (the correction that WOULD apply with a certain association),
+  //   Ptilde= K ( sum_j beta_j y_j y_j^T - ybar ybar^T ) K^T   (spread of the innovations).
+  // Compute the m x m inner matrices, then conjugate by K.
+  std::array<double, 16> spread{};  // sum beta_j y_j y_j^T - ybar ybar^T  (m x m)
+  for (std::size_t j = 0; j < n; ++j) {
+    const std::array<double, 4>& yj = ys[j];
+    for (int a = 0; a < m; ++a) {
+      for (int b = 0; b < m; ++b) spread[a * m + b] += betas[j] * yj[a] * yj[b];
+    }
+  }
+  for (int a = 0; a < m; ++a) {
+    for (int b = 0; b < m; ++b) spread[a * m + b] -= ybar[a] * ybar[b];
+  }
+
+  // dP = K S K^T (6 x 6).
+  std::array<double, 24> KS{};  // K S -> 6 x m
+  for (int i = 0; i < 6; ++i) {
+    for (int b = 0; b < m; ++b) {
+      double s = 0.0;
+      for (int a = 0; a < m; ++a) s += K[i * m + a] * S[a * m + b];
+      KS[i * m + b] = s;
+    }
+  }
+  std::array<double, 36> dP{};
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      double s = 0.0;
+      for (int a = 0; a < m; ++a) s += KS[i * m + a] * K[j * m + a];
+      dP[i * 6 + j] = s;
+    }
+  }
+  // Ptilde = K spread K^T (6 x 6).
+  std::array<double, 24> KSpread{};  // K spread -> 6 x m
+  for (int i = 0; i < 6; ++i) {
+    for (int b = 0; b < m; ++b) {
+      double s = 0.0;
+      for (int a = 0; a < m; ++a) s += K[i * m + a] * spread[a * m + b];
+      KSpread[i * m + b] = s;
+    }
+  }
+  std::array<double, 36> Ptilde{};
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      double s = 0.0;
+      for (int a = 0; a < m; ++a) s += KSpread[i * m + a] * K[j * m + a];
+      Ptilde[i * 6 + j] = s;
+    }
+  }
+
+  const double sum_beta = 1.0 - beta0;
+  for (int k = 0; k < 36; ++k) p_[k] = p_[k] - sum_beta * dP[k] + Ptilde[k];
 
   return nis_;
 }

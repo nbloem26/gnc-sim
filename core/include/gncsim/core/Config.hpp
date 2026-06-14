@@ -320,6 +320,40 @@ struct TrackerSensorConfig {
   IrPhenomenologyConfig ir_pheno;  // IR NETD / atmospheric transmission (type "ir_pheno")
 };
 
+// Multi-target data association (issue #38). Opt-in second-generation tracking mode, selected by
+// trackers.association.mode == "jpda". When the default mode ("none") is in effect the Runner uses
+// the byte-identical single-target fusion path of issue #5. With "jpda", each sensor look produces
+// a SET of detections — the true-target return (when CFAR-detected), one return per decoy /
+// closely- spaced object, and Poisson clutter false alarms — and the Runner runs JPDA over the
+// confirmed track: gate the detections, weight them by likelihood + a no-detection/clutter
+// hypothesis, and fold the probabilistic combination into the TargetTrackEkf (PDA update). A
+// track-lifecycle state machine (M-of-N confirmation, miss-run deletion) governs the track, and
+// per-sensor tracks are fused track-to-track by Covariance Intersection.
+struct TrackAssociationConfig {
+  std::string mode = "none";            // "none" (issue #5 single-target fusion) | "jpda"
+  double prob_detect = 0.9;             // P_D used by the JPDA association weights (dimensionless)
+  double gate_chi2 = 16.0;              // validation-gate threshold on measurement NIS (chi-square)
+  double clutter_density = 1.0e-4;      // clutter spatial density in measurement space (lambda)
+  double clutter_rate = 2.0;            // mean Poisson clutter false alarms per sensor per look
+  double clutter_az_spread_rad = 0.02;  // angular spread of clutter about the track (az/el) [rad]
+  double clutter_range_spread_m = 300.0;  // range spread of clutter about the track [m]
+  int confirm_m = 3;                      // M of the M-of-N confirmation rule
+  int confirm_n = 5;                      // N of the M-of-N confirmation rule
+  int delete_misses = 6;  // delete the track after this many consecutive missed looks
+
+  // Initial track 1-sigma uncertainty for the JPDA bootstrap. A TIGHT, accuracy-consistent gate
+  // from the first look is what lets the associator reject the surrounding decoys/clutter instead
+  // of being pulled to the cluster centroid; the issue-#5 single-target path keeps its wide cue.
+  double init_pos_sigma_m = 30.0;    // initial position 1-sigma [m]
+  double init_vel_sigma_mps = 30.0;  // initial velocity 1-sigma [m/s]
+
+  // Closely-spaced-object scene (the decoys the associator must reject). Reuses the decoy kinematic
+  // spread; these are pure geometry (no feature signature — the associator is kinematic, not a
+  // feature discriminator). Opt-in: 0 closely-spaced objects -> only true target + clutter.
+  int num_cso = 3;  // number of closely-spaced objects (decoys) around the true target
+  double cso_separation_m = 80.0;  // characteristic cluster spread of the CSOs about the target [m]
+};
+
 // Multi-sensor target-track fusion (issue #5). Opt-in: when disabled (default) nothing changes and
 // the default single-seeker navigation path is byte-identical. When enabled, the Runner builds a
 // TargetTrackEkf, synthesizes a noisy measurement from each sensor each step, fuses them
@@ -328,6 +362,7 @@ struct TrackersConfig {
   bool enabled = false;
   double process_psd = 50.0;  // target-accel PSD q [m^2/s^3] per axis (nearly-constant-velocity Q)
   std::vector<TrackerSensorConfig> sensors;
+  TrackAssociationConfig association;  // multi-target data association mode (issue #38)
 };
 
 // Seeker target-discrimination against decoys / closely-spaced objects (issue #6). Opt-in: when
