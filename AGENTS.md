@@ -48,7 +48,7 @@ and re-baseline golden runs in the same change.
 | `web/` | Next.js + React. `app/page.tsx` (tabs), `components/` (per-subsystem panels), `lib/wasmRunner.ts`. |
 | `configs/` | 18 scenario presets (the data contract in practice). Start here to understand inputs. |
 | `matlab/` | Reference analysis scripts (Octave fallback). Not CI-executed. |
-| `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `ROADMAP.md`, `GOLDEN_RUNS.md`. |
+| `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence). |
 | `scripts/` | `build-native.sh`, `build-wasm.sh`, `parity-check.mjs`. |
 
 ## Build / test / run — exact commands
@@ -111,6 +111,24 @@ returns below the WGS-84 ellipsoid (`alt < 0`). Intercept is **not** an early-st
 continuous CPA tracked across the whole flight, `intercept = best_range < kLethalRadius (3 m)`. The
 target is ballistic and not independently terminated.
 
+## Model credibility — per-model docs + V&V matrix (see issue #34)
+
+Every shipped model (the keys resolved by `core/src/model/Registry.cpp`) is documented and has
+traceable evidence:
+
+- [`docs/MODELS.md`](docs/MODELS.md) — one section per model: assumptions, governing equations,
+  validity limits, references.
+- [`docs/VNV_MATRIX.md`](docs/VNV_MATRIX.md) — the **V&V matrix**: each model/claim → its evidence
+  (the `tests/*_test.cpp` GoogleTest benchmark, the `postproc/golden/golden.json` regression entry,
+  and/or the analytic check in `postproc/gncpost/`).
+- The matrix is **machine-checked** as a regression leg: `postproc/gncpost/vnv.py` parses it, the
+  shipped model set, and the golden baseline; `postproc/tests/test_vnv_matrix.py` asserts every
+  shipped model has ≥1 row and every referenced golden key / benchmark file exists. Run it with
+  `python -m gncpost.vnv` or via `python -m pytest postproc/tests/test_vnv_matrix.py`.
+
+New-model PRs **must add a V&V-matrix row** (and a `docs/MODELS.md` page) — see the PR-workflow
+note below.
+
 ## Naming conventions — units in variable names (see issue #69)
 
 **Physical-quantity variables MUST carry an explicit SI unit suffix.** Units belong in the name, not
@@ -153,6 +171,15 @@ under #69 (Phase 1 = this rule; Phase 2 = internal sweep; Phase 3 = optional con
   This is exactly why issues #2–#8 stayed open despite merged PRs.
 - **When you change the schema:** update `docs/DATA_CONTRACT.md` + every surface (C++ serializers,
   Python loaders, `web/lib/types.ts`, MATLAB `load_run.m`) and re-run `golden.py --update`.
+- **When you add a model** (a new key in any `core/src/model/Registry.cpp` resolver — guidance law,
+  nav filter, dynamics/sensor/env/threat type): you **must** also (1) add its page to
+  [`docs/MODELS.md`](docs/MODELS.md) and (2) add a row to the
+  [V&V matrix](docs/VNV_MATRIX.md) linking the model's claim to its evidence (a `tests/*_test.cpp`
+  benchmark, ideally a `golden.json` entry, and/or an analytic check in `postproc/`). The pytest
+  `postproc/tests/test_vnv_matrix.py` (`python -m gncpost.vnv`) cross-checks the matrix against the
+  shipped model set and **fails CI** if a shipped model has no row, or a row names a missing golden
+  key / benchmark file. See *Model credibility* below. (This is the expectation referenced
+  elsewhere as "once #34 exists".)
 
 ## Known issues / gotchas (open tickets)
 
