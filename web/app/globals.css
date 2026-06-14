@@ -354,6 +354,13 @@ button.primary:hover:not(:disabled) {
   outline: none;
 }
 
+/* Merged Trajectory + Ground Track tab: stack the two panels with a gap. */
+.trajGroundStack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 /* Validation figures rendered inline inside a tab card: drop the route-level
    padding/centering, keep the responsive 2-up grid. */
 .valGridInline {

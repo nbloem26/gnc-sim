@@ -15,8 +15,9 @@ import MonteCarloPanel from '@/components/MonteCarloPanel';
 import ValidationFigures from '@/components/ValidationFigures';
 
 // Ground track pulls in Leaflet (window-bound) — load client-only, no SSR.
-// It is also only imported when the Ground-track tab is actually mounted, so the
-// map never instantiates on first load.
+// It is composed inside the merged "Trajectory & Ground Track" tab, whose
+// render() is invoked lazily by <Tabs> only while that tab is active — so the
+// Leaflet map never instantiates on first load or under any other tab.
 const GroundTrack = dynamic(() => import('@/components/GroundTrack'), {
   ssr: false,
   loading: () => <div className="placeholder">Loading map…</div>,
@@ -71,8 +72,16 @@ export default function Home() {
     return [
       {
         id: 'trajectory',
-        label: 'Trajectory',
-        render: () => <TrajectoryPlot result={result} />,
+        label: 'Trajectory & Ground Track',
+        // Stack the trajectory plot above the Leaflet ground track. Because
+        // this render() runs only while the tab is active, the lazy
+        // <GroundTrack> (and its Leaflet map) still mounts only on activation.
+        render: () => (
+          <div className="trajGroundStack">
+            <TrajectoryPlot result={result} />
+            <GroundTrack result={result} />
+          </div>
+        ),
       },
       {
         id: 'guidance',
@@ -93,11 +102,6 @@ export default function Home() {
         id: 'environment',
         label: 'Environment / Aero',
         render: () => <EnvironmentPanel result={result} />,
-      },
-      {
-        id: 'groundtrack',
-        label: 'Ground Track',
-        render: () => <GroundTrack result={result} />,
       },
       {
         id: 'montecarlo',
