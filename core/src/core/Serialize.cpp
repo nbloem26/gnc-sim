@@ -30,6 +30,8 @@ json seriesObject(const SimResult& r) {
   std::vector<double> los = col(), losr = col(), vc = col(), rng = col();
   std::vector<double> nx = col(), ny = col(), nz = col();
   std::vector<double> nis = col();
+  std::vector<double> trk_x = col(), trk_y = col(), trk_z = col();
+  std::vector<double> trk_nis = col();
   std::vector<double> imu_at_x = col(), imu_am_x = col();
   std::vector<double> imu_gt_x = col(), imu_gm_x = col();
   std::vector<double> sk_t = col(), sk_m = col();
@@ -66,6 +68,10 @@ json seriesObject(const SimResult& r) {
     ny.push_back(f.nav_pos_est.y);
     nz.push_back(f.nav_pos_est.z);
     nis.push_back(f.nav_nis);
+    trk_x.push_back(f.track_pos_est.x);
+    trk_y.push_back(f.track_pos_est.y);
+    trk_z.push_back(f.track_pos_est.z);
+    trk_nis.push_back(f.track_nis);
     imu_at_x.push_back(f.imu_accel_true.x);
     imu_am_x.push_back(f.imu_accel_meas.x);
     imu_gt_x.push_back(f.imu_gyro_true.x);
@@ -105,6 +111,10 @@ json seriesObject(const SimResult& r) {
   s["nav_y"] = ny;
   s["nav_z"] = nz;
   s["nav_nis"] = nis;
+  s["track_x"] = trk_x;
+  s["track_y"] = trk_y;
+  s["track_z"] = trk_z;
+  s["track_nis"] = trk_nis;
   s["imu_accel_true_x"] = imu_at_x;
   s["imu_accel_meas_x"] = imu_am_x;
   s["imu_gyro_true_x"] = imu_gt_x;
@@ -154,11 +164,12 @@ std::string toManifestJson(const SimResult& r, const std::string& config_echo) {
 std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
   auto fmt = [](std::ostringstream& os) { os.precision(9); };
 
-  std::ostringstream veh, tgt, gnc, sens;
+  std::ostringstream veh, tgt, gnc, sens, trk;
   fmt(veh);
   fmt(tgt);
   fmt(gnc);
   fmt(sens);
+  fmt(trk);
 
   veh << "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach,thrust\n";
   tgt << "t,x,y,z,vx,vy,vz\n";
@@ -166,6 +177,9 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
          "range,nav_x,nav_y,nav_z,nav_nis\n";
   sens << "t,imu_accel_true_x,imu_accel_meas_x,imu_gyro_true_x,imu_gyro_meas_x,seeker_los_true,"
           "seeker_los_meas\n";
+  // Multi-sensor target track (issue #5): fused absolute target-position estimate vs the true
+  // target position, plus the last sensor-update NIS. All zero on non-tracker paths.
+  trk << "t,track_x,track_y,track_z,tgt_x,tgt_y,tgt_z,track_nis\n";
 
   for (const auto& f : r.frames) {
     const Vector3 e = f.veh_att.toEuler();
@@ -182,12 +196,16 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
     sens << f.t << ',' << f.imu_accel_true.x << ',' << f.imu_accel_meas.x << ','
          << f.imu_gyro_true.x << ',' << f.imu_gyro_meas.x << ',' << f.seeker_los_true << ','
          << f.seeker_los_meas << '\n';
+    trk << f.t << ',' << f.track_pos_est.x << ',' << f.track_pos_est.y << ',' << f.track_pos_est.z
+        << ',' << f.tgt_pos.x << ',' << f.tgt_pos.y << ',' << f.tgt_pos.z << ',' << f.track_nis
+        << '\n';
   }
 
   return {{"vehicle.csv", veh.str()},
           {"target.csv", tgt.str()},
           {"gnc.csv", gnc.str()},
-          {"sensors.csv", sens.str()}};
+          {"sensors.csv", sens.str()},
+          {"track.csv", trk.str()}};
 }
 
 }  // namespace gncsim

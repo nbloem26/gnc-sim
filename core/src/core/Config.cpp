@@ -179,6 +179,26 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         get_or<double>(t, "maneuver_phase_deg", c.target.maneuver_phase_deg);
   }
 
+  if (j.contains("trackers")) {
+    const auto& tr = j["trackers"];
+    c.trackers.enabled = get_or<bool>(tr, "enabled", c.trackers.enabled);
+    c.trackers.process_psd = get_or<double>(tr, "process_psd", c.trackers.process_psd);
+    if (tr.contains("sensors") && tr["sensors"].is_array()) {
+      for (const auto& s : tr["sensors"]) {
+        if (!s.is_object()) continue;
+        TrackerSensorConfig sc;
+        sc.type = get_or<std::string>(s, "type", sc.type);
+        if (sc.type != "ir") sc.type = "radar";  // tolerant: anything but "ir" is a radar
+        sc.pos = get_vec(s, "pos", sc.pos);
+        sc.sigma_az = get_or<double>(s, "sigma_az", sc.sigma_az);
+        sc.sigma_el = get_or<double>(s, "sigma_el", sc.sigma_el);
+        sc.sigma_range = get_or<double>(s, "sigma_range", sc.sigma_range);
+        sc.sigma_range_rate = get_or<double>(s, "sigma_range_rate", sc.sigma_range_rate);
+        c.trackers.sensors.push_back(sc);
+      }
+    }
+  }
+
   if (j.contains("monte_carlo")) {
     const auto& m = j["monte_carlo"];
     c.monte_carlo.num_cases = get_or<int>(m, "num_cases", c.monte_carlo.num_cases);
