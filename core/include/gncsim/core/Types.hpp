@@ -70,6 +70,12 @@ struct Frame {
   double discrim_correct = 1.0;  // 1 = selected the true target; default path always "correct"
   double discrim_margin = 0.0;   // best-minus-second integrated score; 0 when no decoys
 
+  // Interceptor cueing / launch-on-track (issue #8). false on every non-cueing path (default).
+  // When cueing is enabled the interceptor is held stationary at its launch site during PHASE 1
+  // (pre_launch == true) while the fused track is built; it flips to false once the launch
+  // criterion fires and terminal homing begins.
+  bool pre_launch = false;
+
   // Sensors (true vs measured)
   Vector3 imu_accel_true, imu_accel_meas;               // specific force [m/s^2]
   Vector3 imu_gyro_true, imu_gyro_meas;                 // angular rate [rad/s]
@@ -88,6 +94,8 @@ struct SimResult {
   bool intercept = false;
   double miss_distance = 0.0;   // closest approach [m]
   double intercept_time = 0.0;  // time of closest approach [s]
+  double launch_time = 0.0;     // interceptor launch / cue time [s] (issue #8); 0 on the default
+                                // (launch-at-t=0) path, > 0 on the cued launch-on-track path
   std::string git_sha;          // filled by entry points if available
 
   std::vector<Frame> frames;

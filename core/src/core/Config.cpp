@@ -216,6 +216,19 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.decoys.score_filter_tau = get_or<double>(d, "score_filter_tau", c.decoys.score_filter_tau);
   }
 
+  if (j.contains("cueing")) {
+    const auto& cu = j["cueing"];
+    c.cueing.enabled = get_or<bool>(cu, "enabled", c.cueing.enabled);
+    c.cueing.launch_criterion =
+        get_or<std::string>(cu, "launch_criterion", c.cueing.launch_criterion);
+    // Tolerant: anything but the fixed-delay keyword falls back to the track-covariance criterion.
+    if (c.cueing.launch_criterion != "fixed_delay") c.cueing.launch_criterion = "track_cov";
+    c.cueing.cov_trace_threshold =
+        get_or<double>(cu, "cov_trace_threshold", c.cueing.cov_trace_threshold);
+    c.cueing.max_cue_time = get_or<double>(cu, "max_cue_time", c.cueing.max_cue_time);
+    c.cueing.loft_deg = get_or<double>(cu, "loft_deg", c.cueing.loft_deg);
+  }
+
   if (j.contains("monte_carlo")) {
     const auto& m = j["monte_carlo"];
     c.monte_carlo.num_cases = get_or<int>(m, "num_cases", c.monte_carlo.num_cases);
