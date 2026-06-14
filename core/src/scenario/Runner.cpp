@@ -63,6 +63,58 @@ Vector3 targetAccel(const TargetConfig& cfg, const EntityState& tgt, double t) {
   return perp * (cfg.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg.maneuver_freq * t + phase));
 }
 
+// Constant-velocity lead / intercept aim for launch-on-track (issue #8).
+//
+// Given the launch site `launch_pos`, the interceptor's fixed launch speed `vi`, and the threat's
+// estimated current position `tgt_pos` / velocity `tgt_vel` (from the fused track), solve for the
+// interceptor VELOCITY that flies a straight constant-speed line to the point where it meets the
+// threat assuming the threat continues at constant velocity. With r0 = tgt_pos - launch_pos, the
+// intercept time t solves |r0 + tgt_vel*t| = vi*t, i.e. the quadratic
+//   (|tgt_vel|^2 - vi^2) t^2 + 2 (r0·tgt_vel) t + |r0|^2 = 0.
+// Take the smallest positive root; the aim direction is then (r0 + tgt_vel*t) normalized, scaled to
+// vi. `loft_deg` biases the elevation of that aim upward (a lofted launch). If no positive root
+// exists (threat outrunning the interceptor) fall back to pointing straight at the current
+// estimate. Pure arithmetic — no RNG.
+Vector3 leadIntercept(const Vector3& launch_pos, double vi, const Vector3& tgt_pos,
+                      const Vector3& tgt_vel, double loft_deg) {
+  const Vector3 r0 = tgt_pos - launch_pos;
+  const double a = tgt_vel.normSq() - vi * vi;
+  const double b = 2.0 * r0.dot(tgt_vel);
+  const double c = r0.normSq();
+
+  double t_int = -1.0;
+  if (std::fabs(a) < 1e-9) {
+    // Degenerate (threat speed ~ interceptor speed): linear equation b t + c = 0.
+    if (std::fabs(b) > 1e-12) t_int = -c / b;
+  } else {
+    const double disc = b * b - 4.0 * a * c;
+    if (disc >= 0.0) {
+      const double sq = std::sqrt(disc);
+      const double t1 = (-b - sq) / (2.0 * a);
+      const double t2 = (-b + sq) / (2.0 * a);
+      // Smallest strictly-positive root.
+      for (double cand : {t1, t2}) {
+        if (cand > 1e-6 && (t_int < 0.0 || cand < t_int)) t_int = cand;
+      }
+    }
+  }
+
+  // Aim point: predicted intercept position, or the current estimate if no valid lead solution.
+  Vector3 aim_dir = (t_int > 0.0) ? (r0 + tgt_vel * t_int) : r0;
+  if (aim_dir.norm() < 1e-9) aim_dir = Vector3{1.0, 0.0, 0.0};
+  aim_dir = aim_dir.normalized();
+
+  // Apply the loft (elevation bias) about the horizontal axis perpendicular to the aim azimuth.
+  if (std::fabs(loft_deg) > 1e-12) {
+    const double az = std::atan2(aim_dir.y, aim_dir.x);
+    const Vector3 horiz_axis{-std::sin(az), std::cos(az), 0.0};  // points "left" of the aim
+    aim_dir = Quaternion::fromAxisAngle(horiz_axis, loft_deg * M_PI / 180.0).rotate(aim_dir);
+    aim_dir = aim_dir.normalized();
+  }
+
+  return aim_dir * vi;
+}
+
 // Build the fixed TrackSensor list from the trackers config (issue #5).
 std::vector<TrackSensor> buildTrackSensors(const TrackersConfig& cfg) {
   std::vector<TrackSensor> sensors;
@@ -344,10 +396,22 @@ SimResult runSimulation(const SimConfig& cfg) {
   const bool is6dof = (cfg.model == "6dof");
   Rng rng(cfg.seed);
 
+  // --- Interceptor cueing / launch-on-track (issue #8): opt-in, requires trackers ---
+  // When enabled the interceptor is held at its launch site during PHASE 1 (the fused track builds
+  // up) and only launches once the criterion fires. The flag below decides whether the vehicle
+  // starts stationary or with its usual launch velocity. The whole branch is inert by default, so
+  // the legacy launch-at-t=0 trajectory and RNG draw order stay byte-identical.
+  const bool use_cueing =
+      cfg.cueing.enabled && cfg.trackers.enabled && !cfg.trackers.sensors.empty();
+  bool launched = !use_cueing;  // default path is "already launched" at t=0
+  double launch_time = 0.0;
+
   // --- Vehicle initial state ---
   EntityState veh;
   veh.pos = cfg.vehicle.pos0;
-  veh.vel = launchVelocity(cfg.vehicle);
+  // Under cueing the interceptor is stationary at the launch site until launch; otherwise it gets
+  // its configured launch velocity immediately (the legacy behaviour).
+  veh.vel = use_cueing ? Vector3{} : launchVelocity(cfg.vehicle);
   veh.mass = cfg.vehicle.mass0;
   if (is6dof && veh.vel.norm() > 1e-6) veh.att = quatFromTo({1, 0, 0}, veh.vel);
 
@@ -500,6 +564,24 @@ SimResult runSimulation(const SimConfig& cfg) {
       track_pos_est = track_ekf.pos();
       nav_nis = track_nis;
 
+      // --- Launch-on-track (issue #8): fire the launch once the criterion is met ---
+      // Criterion: fused-track position-covariance trace below the threshold (a confident track),
+      // or a hard timeout at max_cue_time, whichever comes first. On firing, record the launch time
+      // and aim the interceptor via a constant-velocity lead solution from the current track
+      // estimate (loft added). Only reachable on the opt-in cueing path.
+      if (use_cueing && !launched) {
+        const bool cov_ready = cfg.cueing.launch_criterion == "track_cov" &&
+                               track_ekf.covTrace() < cfg.cueing.cov_trace_threshold;
+        const bool timed_out = t >= cfg.cueing.max_cue_time;
+        if (cov_ready || timed_out) {
+          launched = true;
+          launch_time = t;
+          veh.vel = leadIntercept(veh.pos, cfg.vehicle.launch_speed, track_ekf.pos(),
+                                  track_ekf.vel(), cfg.cueing.loft_deg);
+          if (is6dof && veh.vel.norm() > 1e-6) veh.att = quatFromTo({1, 0, 0}, veh.vel);
+        }
+      }
+
       EntityState veh_est = veh, tgt_est = tgt;
       tgt_est.pos = track_ekf.pos();
       tgt_est.vel = track_ekf.vel();
@@ -551,8 +633,14 @@ SimResult runSimulation(const SimConfig& cfg) {
     }
 
     // --- Guidance: Proportional Navigation (PN) or Augmented PN (APN) ---
+    // During the cueing PHASE 1 (pre-launch) the interceptor is parked at its launch site: no
+    // guidance command, no realized accel. Skip straight past the guidance/autopilot math so the
+    // APN derivative state isn't seeded from a stationary vehicle either.
     Vector3 accel_cmd;
-    if (use_apn) {
+    if (!launched) {
+      accel_achieved = Vector3{};
+      accel_achieved_prev = Vector3{};
+    } else if (use_apn) {
       // Estimate the target's acceleration from the navigation relative-velocity derivative.
       // accel_achieved here is still the previous step's realized accel (updated below), i.e. the
       // a_vehicle that acted over the interval that produced this step's rel_vel change.
@@ -658,6 +746,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.selected_obj = static_cast<double>(selected_obj);
     f.discrim_correct = discrim_correct ? 1.0 : 0.0;
     f.discrim_margin = discrim_margin;
+    f.pre_launch = !launched;  // issue #8: true while parked at the launch site (cued path only)
     f.imu_accel_true = specific_force;
     f.imu_accel_meas = imu_accel_meas;
     f.imu_gyro_true = veh.angVel;
@@ -669,19 +758,23 @@ SimResult runSimulation(const SimConfig& cfg) {
     // --- Closest-approach bookkeeping ---
     // Analytic CPA over the next dt assuming constant relative velocity. This makes the miss
     // distance continuous and independent of dt (sampling alone would quantize it to ~dt*Vc).
-    const double denom = truth.rel_vel.normSq();
-    double s_star = denom > 0.0 ? -(truth.rel_pos.dot(truth.rel_vel)) / denom : 0.0;
-    if (s_star < 0.0) s_star = 0.0;
-    if (s_star > cfg.dt) s_star = cfg.dt;
-    const double cpa = (truth.rel_pos + truth.rel_vel * s_star).norm();
-    if (cpa < best_range) {
-      best_range = cpa;
-      best_t = t + s_star;
-    }
+    // Skipped entirely during the cueing PHASE 1: the interceptor is parked at the launch site, so
+    // its (huge, static) range to the threat must not pollute the closest-approach metric.
+    if (launched) {
+      const double denom = truth.rel_vel.normSq();
+      double s_star = denom > 0.0 ? -(truth.rel_pos.dot(truth.rel_vel)) / denom : 0.0;
+      if (s_star < 0.0) s_star = 0.0;
+      if (s_star > cfg.dt) s_star = cfg.dt;
+      const double cpa = (truth.rel_pos + truth.rel_vel * s_star).norm();
+      if (cpa < best_range) {
+        best_range = cpa;
+        best_t = t + s_star;
+      }
 
-    // --- Termination ---
-    if (veh.pos.z < 0.0 && t > 0.0) break;                     // hit the ground
-    if (truth.v_closing < 0.0 && truth.range < 3000.0) break;  // passed CPA in the terminal phase
+      // --- Termination (only after launch) ---
+      if (veh.pos.z < 0.0 && t > 0.0) break;                     // hit the ground
+      if (truth.v_closing < 0.0 && truth.range < 3000.0) break;  // passed CPA in the terminal phase
+    }
 
     // --- Propagate target then vehicle ---
     const Vector3 ta = targetAccel(cfg.target, tgt, t);
@@ -707,20 +800,26 @@ SimResult runSimulation(const SimConfig& cfg) {
       }
     }
 
-    const Vector3 g = gravity.acceleration(veh.pos);
-    veh = is6dof ? step6dof(veh, force_world, moment_body, cfg.vehicle.inertia, g, cfg.dt,
-                            cfg.integrator)
-                 : step3dof(veh, force_world, g, cfg.dt, cfg.integrator);
+    // Propagate the vehicle only after launch — during cueing PHASE 1 it stays parked at the launch
+    // site (zero velocity, no forces integrated). The target/track/decoy scene above keep advancing
+    // so the threat closes in while the launch criterion is being evaluated.
+    if (launched) {
+      const Vector3 g = gravity.acceleration(veh.pos);
+      veh = is6dof ? step6dof(veh, force_world, moment_body, cfg.vehicle.inertia, g, cfg.dt,
+                              cfg.integrator)
+                   : step3dof(veh, force_world, g, cfg.dt, cfg.integrator);
 
-    // Burn propellant down to the dry-mass floor while thrusting (after the step uses this
-    // step's mass for accel, so force_world and accel stay mass-consistent within the step).
-    if (boosting && m_dot > 0.0) {
-      veh.mass = std::max(veh.mass - m_dot * cfg.dt, dry_mass_floor);
+      // Burn propellant down to the dry-mass floor while thrusting (after the step uses this
+      // step's mass for accel, so force_world and accel stay mass-consistent within the step).
+      if (boosting && m_dot > 0.0) {
+        veh.mass = std::max(veh.mass - m_dot * cfg.dt, dry_mass_floor);
+      }
     }
   }
 
   r.miss_distance = best_range;
   r.intercept_time = best_t;
+  r.launch_time = launch_time;
   r.intercept = best_range < kLethalRadius;
   return r;
 }
