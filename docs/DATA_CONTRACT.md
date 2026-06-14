@@ -37,9 +37,12 @@ config is valid. Shape (defaults shown):
   "control":  { "kp": 8.0, "kd": 2.5, "max_fin_deflection": 0.35 },   // 6DOF only
   "sensors":  { "enable": false, "imu": { ...see sensor_params.json... },
                 "seeker": { "los_white": 0.0, "los_bias": 0.0, "glint": 0.0 } },
-  "nav":      { "filter": "alpha_beta",       // "alpha_beta" | "ekf" navigation filter
+  "nav":      { "filter": "alpha_beta",       // "alpha_beta" | "ekf" | "imm" navigation filter
                 "process_accel_psd": 50.0,    // EKF target-accel PSD q [m^2/s^3] per axis
-                "range_white": 5.0 },         // EKF range measurement noise std [m]
+                "range_white": 5.0,           // EKF/IMM range measurement noise std [m]
+                "imm_q_cv": 0.5,              // IMM constant-velocity model process-accel PSD [m^2/s^3]
+                "imm_q_man": 3000.0,          // IMM maneuver model process-accel PSD [m^2/s^3]
+                "imm_p_stay": 0.999 },        // IMM Markov mode self-transition prob (stickiness)
   "target":   { "pos0": [8000,0,3000], "vel0": [-250,0,0],
                 "maneuver": "constant", "maneuver_g": 3.0, "maneuver_freq": 0.4 },
   "trackers": { "enabled": false, "process_psd": 50.0, "sensors": [] },   // multi-sensor fusion
@@ -149,9 +152,12 @@ Allan-variance pipeline** (`sensors/`) and fed back into the sim — see §5.
 }
 ```
 
-`nav_nis` is the EKF navigation filter's normalized innovation squared (chi-square, dof = 3) each
-step. It is `0` on the default alpha-beta path; on the EKF path (`nav.filter == "ekf"`) its mean
-should sit near 3 for a consistent filter. On error the WASM entry returns `{"error": "<message>"}`.
+`nav_nis` is the navigation filter's normalized innovation squared (chi-square, dof = 3) each step.
+It is `0` on the default alpha-beta path; on the EKF path (`nav.filter == "ekf"`) its mean should sit
+near 3 for a consistent filter. On the IMM path (`nav.filter == "imm"`) the same column carries the
+mode-probability-weighted *combined* NIS across the model bank — for a maneuvering target this stays
+near 3 where a single CV EKF's NIS spikes during the maneuver. No new column is added; the IMM reuses
+the `nav_nis` channel. On error the WASM entry returns `{"error": "<message>"}`.
 
 `track_x/y/z` are the fused **absolute target-position** estimate [m] (ENU) from the multi-sensor
 target-track fusion path, and `track_nis` is the last fused sensor update's NIS. All four are `0` on

@@ -4,7 +4,7 @@
 //
 // Keys (the strings already used in the data contract / configs):
 //   guidance.law      : "pronav" | "apn" | "none"        -> IGuidance
-//   nav.filter        : "alpha_beta" | "ekf"             -> INavigator
+//   nav.filter        : "alpha_beta" | "ekf" | "imm"     -> INavigator
 //   trackers.sensors[].type : "radar" | "ir"            -> ISensor
 //   model             : "3dof" | "6dof"                  -> IDynamics
 //   env.frame         : "flat" (round handled separately)-> IEnvironment
