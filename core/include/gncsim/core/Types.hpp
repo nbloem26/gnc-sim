@@ -52,6 +52,7 @@ struct Frame {
   double los_rate = 0.0;    // line-of-sight rate [rad/s]
   double v_closing = 0.0;   // closing velocity [m/s]
   double range = 0.0;       // vehicle-to-target range [m]
+  double nav_nis = 0.0;     // EKF normalized innovation squared (dof=3); 0 on the alpha-beta path
 
   // Sensors (true vs measured)
   Vector3 imu_accel_true, imu_accel_meas;   // specific force [m/s^2]

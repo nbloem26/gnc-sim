@@ -135,6 +135,13 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     }
   }
 
+  if (j.contains("nav")) {
+    const auto& n = j["nav"];
+    c.nav.filter = get_or<std::string>(n, "filter", c.nav.filter);
+    c.nav.process_accel_psd = get_or<double>(n, "process_accel_psd", c.nav.process_accel_psd);
+    c.nav.range_white = get_or<double>(n, "range_white", c.nav.range_white);
+  }
+
   if (j.contains("target")) {
     const auto& t = j["target"];
     c.target.pos0 = get_vec(t, "pos0", c.target.pos0);
