@@ -17,6 +17,7 @@
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/gnc/Imm.hpp"
 #include "gncsim/model/Threats.hpp"
+#include "gncsim/sensors/Phenomenology.hpp"
 
 namespace gncsim {
 
@@ -159,6 +160,83 @@ class TrackSensorModel final : public ISensor {
   TrackSensor s_;
 };
 
+// Phenomenology sensor (issue #39): a signal->detection front-end over the plain measurement model.
+// Each look it (1) models the SNR from geometry — radar range-equation + Swerling RCS +
+// clutter/ECM, or IR NETD + atmospheric transmission — (2) runs CA-CFAR to decide detected/missed
+// at the configured Pfa, and (3) on a detection synthesizes the same az/el[/range/range_rate]
+// measurement the TargetTrackEkf fuses. RNG draw order is fixed (signal draws, then the CFAR
+// Bernoulli, then the measurement-noise draws only on a hit) so native<->WASM parity holds.
+class PhenomenologySensorModel final : public ISensor {
+ public:
+  PhenomenologySensorModel(const TrackSensor& s, const TrackerSensorConfig& cfg)
+      : s_(s),
+        cfar_(cfg.cfar),
+        radar_(cfg.radar),
+        ir_(cfg.ir_pheno),
+        is_radar_(s.type == TrackSensorType::Radar),
+        swerling_(swerlingFromInt(cfg.radar.swerling)) {}
+
+  // measure() is the plain noisy-measurement synthesis (used by the default ISensor::detect only if
+  // a caller bypasses detect(); the Runner always calls detect()). Kept consistent with detect().
+  std::vector<double> measure(const Vector3& tgt_pos, const Vector3& tgt_vel,
+                              Rng& rng) const override {
+    const Vector3 rel = tgt_pos - s_.pos;
+    const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+    const double r = rel.norm();
+    double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
+    double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, s_.sigma_el);
+    if (!is_radar_) return {az, el};
+    const double range = r + rng.gaussian(0.0, s_.sigma_range);
+    const double range_rate =
+        (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
+    return {az, el, range, range_rate};
+  }
+
+  SensorDetection detect(const Vector3& tgt_pos, const Vector3& tgt_vel, Rng& rng) const override {
+    const Vector3 rel = tgt_pos - s_.pos;
+    const double r = rel.norm();
+
+    // (1) Signal model -> linear SNR. Radar draws the instantaneous Swerling RCS first.
+    double snr_linear = 0.0;
+    double ir_sigma_angle = s_.sigma_az;
+    if (is_radar_) {
+      const double rcs_m2 = swerlingRcsSample(swerling_, radar_.rcs_mean_m2, rng);
+      snr_linear = radarSnrLinear(radar_, r, rcs_m2);
+    } else {
+      snr_linear = irSnrLinear(ir_, r);
+      ir_sigma_angle = irAngleSigmaRad(ir_, snr_linear);
+    }
+
+    // (2) CA-CFAR detection decision (one Bernoulli uniform).
+    const CfarResult cfar = cfarDetect(cfar_, snr_linear, rng);
+    if (!cfar.detected) return SensorDetection{false, {}, cfar.snr_db};
+
+    // (3) On a detection, synthesize the measurement. IR centroid noise scales with the SNR.
+    const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+    if (is_radar_) {
+      double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
+      double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, s_.sigma_el);
+      const double range = r + rng.gaussian(0.0, s_.sigma_range);
+      const double range_rate =
+          (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
+      return SensorDetection{true, {az, el, range, range_rate}, cfar.snr_db};
+    }
+    double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, ir_sigma_angle);
+    double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, ir_sigma_angle);
+    return SensorDetection{true, {az, el}, cfar.snr_db};
+  }
+
+  const TrackSensor& spec() const override { return s_; }
+
+ private:
+  TrackSensor s_;
+  CfarConfig cfar_;
+  RadarPhenomenologyConfig radar_;
+  IrPhenomenologyConfig ir_;
+  bool is_radar_;
+  SwerlingCase swerling_;
+};
+
 // =============================================================================================
 // Dynamics adapters
 // =============================================================================================
@@ -287,16 +365,20 @@ std::unique_ptr<INavigator> ModelRegistry::makeNavigator(const std::string& filt
 }
 
 std::unique_ptr<ISensor> ModelRegistry::makeSensor(const TrackerSensorConfig& sc) const {
-  if (sc.type != "radar" && sc.type != "ir") {
+  if (sc.type != "radar" && sc.type != "ir" && sc.type != "radar_pheno" && sc.type != "ir_pheno") {
     throw std::invalid_argument("ModelRegistry: unknown sensor type '" + sc.type + "'");
   }
   TrackSensor s;
-  s.type = (sc.type == "ir") ? TrackSensorType::Ir : TrackSensorType::Radar;
+  const bool is_ir = (sc.type == "ir" || sc.type == "ir_pheno");
+  s.type = is_ir ? TrackSensorType::Ir : TrackSensorType::Radar;
   s.pos = sc.pos;
   s.sigma_az = sc.sigma_az;
   s.sigma_el = sc.sigma_el;
   s.sigma_range = sc.sigma_range;
   s.sigma_range_rate = sc.sigma_range_rate;
+  if (sc.type == "radar_pheno" || sc.type == "ir_pheno") {
+    return std::make_unique<PhenomenologySensorModel>(s, sc);
+  }
   return std::make_unique<TrackSensorModel>(s);
 }
 

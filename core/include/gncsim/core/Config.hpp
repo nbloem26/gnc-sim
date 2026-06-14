@@ -266,15 +266,58 @@ struct TargetConfig {
   RvPenaidsConfig rv;  // target.maneuver == "rv_penaids"
 };
 
+// CA-CFAR detector parameters (issue #39). Shared by radar/IR phenomenology sensors. The
+// false-alarm rate is held constant by setting the threshold from `num_ref_cells` reference cells:
+//   alpha = N * (pfa^(-1/N) - 1).  Larger N -> lower CFAR loss (alpha -> -ln(pfa)).
+struct CfarConfig {
+  double pfa = 1.0e-4;     // design probability of false alarm (per CFAR cell-under-test)
+  int num_ref_cells = 24;  // number of reference (training) cells averaged for the noise estimate
+};
+
+// Radar phenomenology (issue #39): turns geometry into an SNR via the range equation, with Swerling
+// RCS fluctuation, clutter, and barrage-noise ECM. SNR is anchored: at `range_ref_m` a target of
+// `rcs_ref_m2` yields `snr_ref_db`; SNR then scales as rcs / R^4. Used only by type "radar_pheno".
+struct RadarPhenomenologyConfig {
+  double rcs_mean_m2 = 1.0;    // mean target radar cross section [m^2]
+  int swerling = 1;            // Swerling case: 0 (non-fluctuating) | 1 | 2 | 3 | 4
+  double range_ref_m = 1.0e4;  // reference range at which snr_ref_db is anchored [m]
+  double rcs_ref_m2 = 1.0;     // reference RCS for the SNR anchor [m^2]
+  double snr_ref_db = 20.0;    // single-pulse SNR of an rcs_ref target at range_ref [dB]
+  double clutter_cnr_db =
+      -100.0;                     // clutter-to-noise ratio raising the noise floor [dB] (off: <-90)
+  double jammer_jnr_db = -100.0;  // barrage-noise jammer-to-noise ratio [dB] (off when <-90)
+};
+
+// IR phenomenology (issue #39): contrast SNR from NETD and atmospheric transmission. The target's
+// apparent intensity falls as 1/R^2 and is attenuated by Beer-Lambert exp(-beta R); NETD sets the
+// noise-equivalent contrast. Detection SNR also drives the angular measurement noise. Type
+// "ir_pheno".
+struct IrPhenomenologyConfig {
+  double netd_k = 0.05;            // noise-equivalent temperature difference [K]
+  double target_contrast_k = 2.0;  // target-vs-background apparent ΔT contrast at range_ref [K]
+  double range_ref_m = 1.0e4;      // reference range for the contrast anchor [m]
+  double atm_extinction_per_m = 5.0e-5;  // Beer-Lambert extinction coefficient beta [1/m]
+  double theta_resolution_rad = 1.0e-3;  // pixel/IFOV angular resolution [rad]
+  double centroid_gain = 4.0;            // centroiding gain k in sigma = theta_res/(k*sqrt(SNR))
+};
+
 // One fixed external sensor in the multi-tracker fusion path (issue #5). Type "radar" yields
 // [az, el, range, range_rate]; type "ir" is angles-only [az, el]. Position is fixed in ENU [m].
+// Types "radar_pheno" / "ir_pheno" (issue #39) add the signal->detection front-end: the same az/el
+// [/range/range_rate] measurement, but gated by a CA-CFAR detection (Pd from the modelled SNR), so
+// the tracker consumes detections — not perfect-with-noise truth — and coasts on a missed look.
 struct TrackerSensorConfig {
-  std::string type = "radar";  // "radar" | "ir"
+  std::string type = "radar";  // "radar" | "ir" | "radar_pheno" | "ir_pheno"
   Vector3 pos;                 // sensor location, ENU [m] (e.g. ground site at origin, space high)
   double sigma_az = 1.0e-3;    // azimuth noise std [rad]   (radar + ir)
   double sigma_el = 1.0e-3;    // elevation noise std [rad] (radar + ir)
   double sigma_range = 10.0;   // range noise std [m]        (radar only)
   double sigma_range_rate = 1.0;  // range-rate noise std [m/s] (radar only)
+
+  // --- Phenomenology (issue #39); consulted only by the *_pheno types, additive/opt-in. ---
+  CfarConfig cfar;                 // CA-CFAR detector (Pfa, reference cells)
+  RadarPhenomenologyConfig radar;  // radar SNR / RCS / clutter / ECM (type "radar_pheno")
+  IrPhenomenologyConfig ir_pheno;  // IR NETD / atmospheric transmission (type "ir_pheno")
 };
 
 // Multi-sensor target-track fusion (issue #5). Opt-in: when disabled (default) nothing changes and

@@ -17,7 +17,7 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
 | Guidance | `guidance.law` | `pronav`, `apn`, `zemzev`, `none` |
 | Navigation | `nav.filter` | `alpha_beta`, `ekf`, `imm` |
 | Dynamics | `vehicle.model` | `3dof`, `6dof`, `6dof_hifi` |
-| Sensor | `trackers[].type` | `radar`, `ir` |
+| Sensor | `trackers[].type` | `radar`, `ir`, `radar_pheno`, `ir_pheno` |
 | Environment | `env.frame` | `flat`, `round` |
 | Threat | `target.maneuver` | `constant`, `weave`, `icbm`, `hgv`, `rv_penaids` |
 
@@ -221,6 +221,52 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   seeker; this track-sensor channel is the white-noise az/el model.
 - **References.** Bar-Shalom §3 (angles-only / bearings-only observability); IR seeker glint
   models.
+
+### `radar_pheno` — Radar phenomenology (signal → detection)
+
+- **Assumptions.** A `radar` track sensor with a *detection* front-end (issue #39): instead of
+  always delivering a measurement, each look first forms a **signal-to-noise ratio** and passes
+  it through a **CA-CFAR** detector. SNR comes from the monostatic range equation anchored at a
+  reference (`snr_ref_db` for an `rcs_ref_m2` target at `range_ref_m`), scaling as `σ / R⁴`. The
+  instantaneous RCS `σ` fluctuates per the configured **Swerling** case (0 non-fluctuating; I/II
+  exponential / χ²-2dof; III/IV χ²-4dof). **Clutter** (`clutter_cnr_db`) and **barrage-noise ECM**
+  (`jammer_jnr_db`) raise the effective noise floor, dividing SNR by `1 + CNR + JNR`. On a CFAR
+  detection the same `[az, el, range, range_rate]` measurement as `radar` is produced and fused;
+  on a miss the tracker coasts (predict-only) that step.
+- **Governing equations.** RCS draw: Swerling-I/II `σ = σ̄·(−ln U)`; III/IV `σ = σ̄·½(−ln U₁−ln U₂)`.
+  SNR (linear) `= 10^(snr_ref_db/10)·(σ/σ_ref)·(R_ref/R)⁴ / (1 + CNR + JNR)`. CA-CFAR threshold
+  multiplier `α = N·(Pfa^(−1/N) − 1)` (Gandhi & Kassam, `N = num_ref_cells`); single-look detection
+  probability `Pd = (1 + α/(N·(1+SNR)))^(−N)`, which collapses to `Pfa` at `SNR = 0` (noise only).
+  A Bernoulli draw `U < Pd` from the run RNG decides the look. RNG order per step: RCS draw → CFAR
+  Bernoulli → (on a hit) the az/el/range/range-rate Gaussian noise — fixed, so native↔WASM parity
+  holds.
+- **Validity limits.** Single-pulse, square-law, **non-coherent** detection; CA-CFAR loss only (no
+  GO/SO/OS-CFAR, no multi-pulse integration). Range-Doppler/RCS/clutter/ECM are reduced to scalar
+  SNR effects — there is no explicit range-Doppler matrix, multipath, or glint. The closed-form Pd
+  assumes a homogeneous Rayleigh reference window. A credible, tested core of the full stack; finer
+  fidelity (coherent integration, ambiguity functions, alternative CFAR variants) is follow-up work.
+- **References.** Skolnik, *Introduction to Radar Systems* (range equation, Swerling cases);
+  Gandhi & Kassam, "Analysis of CFAR processors in nonhomogeneous background," *IEEE T-AES* 24(4),
+  1988 (CA-CFAR α and Pd/Pfa); Richards, *Fundamentals of Radar Signal Processing* (CFAR, detection).
+
+### `ir_pheno` — IR phenomenology (NETD + atmosphere → detection)
+
+- **Assumptions.** An angles-only `ir` track sensor with a NETD/atmosphere detection front-end
+  (issue #39). The target's apparent thermal contrast falls as **inverse-square** with range and is
+  attenuated by **Beer-Lambert** atmospheric transmission `exp(−β·R)`; the **NETD** (`netd_k`) sets
+  the noise-equivalent contrast, so `SNR = contrast(R)/NETD`. The same CA-CFAR detector decides the
+  look. On a detection the `[az, el]` measurement is produced, with the angular noise tied to the
+  signal: stronger SNR → tighter centroid (`σ = θ_res/(k·√SNR)`, floored).
+- **Governing equations.** `contrast(R) = ΔT_ref·(R_ref/R)²·exp(−β·(R−R_ref))`;
+  `SNR = contrast(R)/NETD`; `σ_angle = θ_resolution/(centroid_gain·√SNR)`. CFAR Pd/Pfa as for
+  `radar_pheno`. RNG order: (no signal draw — IR SNR is deterministic given geometry) CFAR Bernoulli
+  → (on a hit) the two az/el Gaussian noise draws.
+- **Validity limits.** Scalar NETD-limited contrast SNR; no focal-plane pixel grid, no spectral
+  band model, no background-clutter statistics, no plume/temperature radiometry. Atmospheric
+  transmission is a single exponential extinction coefficient (no band/altitude dependence). A
+  credible core; richer focal-plane/radiometric fidelity is follow-up work.
+- **References.** Hudson, *Infrared System Engineering* (NETD, contrast); Beer-Lambert atmospheric
+  transmission; Gandhi & Kassam (CA-CFAR, as above).
 
 ---
 

@@ -93,20 +93,41 @@ of the target's absolute state. Guidance then uses `track_est − vehicle` inste
 Each `sensors[]` entry:
 
 ```jsonc
-{ "type": "radar",        // "radar" (az,el,range,range_rate) | "ir" (angles-only az,el)
+{ "type": "radar",        // "radar" | "ir" | "radar_pheno" | "ir_pheno"
   "pos": [0,0,0],         // fixed sensor location, ENU [m] (ground site, space platform, ...)
-  "sigma_az": 0.002,      // azimuth noise std [rad]    (radar + ir)
-  "sigma_el": 0.002,      // elevation noise std [rad]  (radar + ir)
-  "sigma_range": 25.0,    // range noise std [m]         (radar only)
-  "sigma_range_rate": 3.0 // range-rate noise std [m/s]  (radar only)
+  "sigma_az": 0.002,      // azimuth noise std [rad]    (all types)
+  "sigma_el": 0.002,      // elevation noise std [rad]  (all types)
+  "sigma_range": 25.0,    // range noise std [m]         (radar / radar_pheno)
+  "sigma_range_rate": 3.0 // range-rate noise std [m/s]  (radar / radar_pheno)
 }
 ```
 
-When `trackers.enabled` is false the new path is never entered: the default RNG draw order, the
-trajectory, and all four legacy CSVs are byte-identical, and the track channel (below) is zero.
-Sample configs: `configs/track_radar_only.json`, `track_ir_only.json`, `track_fused.json` (the same
-engagement differing only in `trackers.sensors`). Demonstration: `postproc/gncpost/fusion.py`
-computes the RMS track error for each and shows fusion < radar-only < IR-only.
+The `radar_pheno` / `ir_pheno` types (issue #39) add a **signal → detection** front-end: each look
+forms an SNR and runs a **CA-CFAR** detector, so the tracker consumes *detections* (gated by Pd at a
+controlled Pfa) rather than always-on measurements — a missed look means the track coasts that step.
+They take additional opt-in sub-blocks (defaults shown; consulted only by the `*_pheno` types):
+
+```jsonc
+{ "type": "radar_pheno", "pos": [0,0,0], "sigma_az": 0.002, "sigma_el": 0.002,
+  "sigma_range": 25.0, "sigma_range_rate": 3.0,
+  "cfar":  { "pfa": 1e-4, "num_ref_cells": 24 },        // CA-CFAR design Pfa + reference cells
+  "radar": { "rcs_mean_m2": 1.0, "swerling": 1,         // Swerling 0|1|2|3|4 RCS fluctuation
+             "range_ref_m": 1e4, "rcs_ref_m2": 1.0, "snr_ref_db": 18.0,  // SNR range-equation anchor
+             "clutter_cnr_db": -100.0, "jammer_jnr_db": -100.0 } }       // clutter / barrage-noise ECM
+{ "type": "ir_pheno", "pos": [...], "sigma_az": 0.0003, "sigma_el": 0.0003,
+  "cfar": { "pfa": 1e-4, "num_ref_cells": 24 },
+  "ir":   { "netd_k": 0.05, "target_contrast_k": 3.0, "range_ref_m": 1e4,  // NETD + contrast anchor
+            "atm_extinction_per_m": 2e-6,                                  // Beer-Lambert extinction
+            "theta_resolution_rad": 6e-4, "centroid_gain": 4.0 } }        // SNR → angular noise
+```
+
+No telemetry columns change: the `track.csv` schema is identical; phenomenology only affects *which*
+looks produce a fused update. When `trackers.enabled` is false the new path is never entered: the
+default RNG draw order, the trajectory, and all four legacy CSVs are byte-identical, and the track
+channel (below) is zero. Sample configs: `configs/track_radar_only.json`, `track_ir_only.json`,
+`track_fused.json`, and `track_phenomenology.json` (radar_pheno + ir_pheno). Demonstrations:
+`postproc/gncpost/fusion.py` (fusion < radar-only < IR-only) and `postproc/gncpost/phenomenology.py`
+(CA-CFAR ROC + range-Doppler map).
 
 The `decoys` block (default `enabled:false`) is the opt-in **seeker decoy / closely-spaced-object
 discrimination** path (issue #6). When enabled, the Runner places `count` decoys in a Gaussian
