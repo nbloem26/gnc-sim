@@ -17,8 +17,10 @@ enum class Integrator { Euler, RK2, RK4 };
 
 struct EnvConfig {
   double g0 = 9.80665;                // surface gravity [m/s^2]
-  bool altitude_dependent_g = false;  // inverse-square falloff if true
+  bool altitude_dependent_g = false;  // inverse-square falloff if true (flat mode)
   bool atmosphere = true;             // apply USSA76 drag if true
+  std::string frame = "flat";         // "flat" (default, flat-Earth ENU) | "round" (WGS-84 ECI)
+  bool j2 = false;                    // add J2 oblateness term to round-mode central gravity
 };
 
 struct AeroConfig {
