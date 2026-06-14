@@ -1,10 +1,9 @@
 // gnc-sim — SimResult serialization (see Serialize.hpp). Columnar JSON + CSV strings + manifest.
 #include "gncsim/core/Serialize.hpp"
 
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 namespace gncsim {
 
@@ -14,7 +13,11 @@ using nlohmann::json;
 // Build a columnar dictionary {column -> [values...]} from the frames.
 json seriesObject(const SimResult& r) {
   const std::size_t n = r.frames.size();
-  auto col = [n]() { std::vector<double> v; v.reserve(n); return v; };
+  auto col = [n]() {
+    std::vector<double> v;
+    v.reserve(n);
+    return v;
+  };
 
   std::vector<double> t = col();
   std::vector<double> vx = col(), vy = col(), vz = col();
@@ -33,37 +36,79 @@ json seriesObject(const SimResult& r) {
 
   for (const auto& f : r.frames) {
     t.push_back(f.t);
-    vx.push_back(f.veh_pos.x); vy.push_back(f.veh_pos.y); vz.push_back(f.veh_pos.z);
-    vvx.push_back(f.veh_vel.x); vvy.push_back(f.veh_vel.y); vvz.push_back(f.veh_vel.z);
+    vx.push_back(f.veh_pos.x);
+    vy.push_back(f.veh_pos.y);
+    vz.push_back(f.veh_pos.z);
+    vvx.push_back(f.veh_vel.x);
+    vvy.push_back(f.veh_vel.y);
+    vvz.push_back(f.veh_vel.z);
     const Vector3 e = f.veh_att.toEuler();
-    roll.push_back(e.x); pitch.push_back(e.y); yaw.push_back(e.z);
-    mass.push_back(f.mass); mach.push_back(f.mach);
-    tx.push_back(f.tgt_pos.x); ty.push_back(f.tgt_pos.y); tz.push_back(f.tgt_pos.z);
-    tvx.push_back(f.tgt_vel.x); tvy.push_back(f.tgt_vel.y); tvz.push_back(f.tgt_vel.z);
-    acx.push_back(f.accel_cmd.x); acy.push_back(f.accel_cmd.y); acz.push_back(f.accel_cmd.z);
-    los.push_back(f.los_angle); losr.push_back(f.los_rate); vc.push_back(f.v_closing); rng.push_back(f.range);
-    nx.push_back(f.nav_pos_est.x); ny.push_back(f.nav_pos_est.y); nz.push_back(f.nav_pos_est.z);
+    roll.push_back(e.x);
+    pitch.push_back(e.y);
+    yaw.push_back(e.z);
+    mass.push_back(f.mass);
+    mach.push_back(f.mach);
+    tx.push_back(f.tgt_pos.x);
+    ty.push_back(f.tgt_pos.y);
+    tz.push_back(f.tgt_pos.z);
+    tvx.push_back(f.tgt_vel.x);
+    tvy.push_back(f.tgt_vel.y);
+    tvz.push_back(f.tgt_vel.z);
+    acx.push_back(f.accel_cmd.x);
+    acy.push_back(f.accel_cmd.y);
+    acz.push_back(f.accel_cmd.z);
+    los.push_back(f.los_angle);
+    losr.push_back(f.los_rate);
+    vc.push_back(f.v_closing);
+    rng.push_back(f.range);
+    nx.push_back(f.nav_pos_est.x);
+    ny.push_back(f.nav_pos_est.y);
+    nz.push_back(f.nav_pos_est.z);
     nis.push_back(f.nav_nis);
-    imu_at_x.push_back(f.imu_accel_true.x); imu_am_x.push_back(f.imu_accel_meas.x);
-    imu_gt_x.push_back(f.imu_gyro_true.x); imu_gm_x.push_back(f.imu_gyro_meas.x);
-    sk_t.push_back(f.seeker_los_true); sk_m.push_back(f.seeker_los_meas);
+    imu_at_x.push_back(f.imu_accel_true.x);
+    imu_am_x.push_back(f.imu_accel_meas.x);
+    imu_gt_x.push_back(f.imu_gyro_true.x);
+    imu_gm_x.push_back(f.imu_gyro_meas.x);
+    sk_t.push_back(f.seeker_los_true);
+    sk_m.push_back(f.seeker_los_meas);
   }
 
   json s;
   s["t"] = t;
-  s["veh_x"] = vx; s["veh_y"] = vy; s["veh_z"] = vz;
-  s["veh_vx"] = vvx; s["veh_vy"] = vvy; s["veh_vz"] = vvz;
-  s["roll"] = roll; s["pitch"] = pitch; s["yaw"] = yaw;
-  s["mass"] = mass; s["mach"] = mach;
-  s["tgt_x"] = tx; s["tgt_y"] = ty; s["tgt_z"] = tz;
-  s["tgt_vx"] = tvx; s["tgt_vy"] = tvy; s["tgt_vz"] = tvz;
-  s["accel_cmd_x"] = acx; s["accel_cmd_y"] = acy; s["accel_cmd_z"] = acz;
-  s["los_angle"] = los; s["los_rate"] = losr; s["v_closing"] = vc; s["range"] = rng;
-  s["nav_x"] = nx; s["nav_y"] = ny; s["nav_z"] = nz;
+  s["veh_x"] = vx;
+  s["veh_y"] = vy;
+  s["veh_z"] = vz;
+  s["veh_vx"] = vvx;
+  s["veh_vy"] = vvy;
+  s["veh_vz"] = vvz;
+  s["roll"] = roll;
+  s["pitch"] = pitch;
+  s["yaw"] = yaw;
+  s["mass"] = mass;
+  s["mach"] = mach;
+  s["tgt_x"] = tx;
+  s["tgt_y"] = ty;
+  s["tgt_z"] = tz;
+  s["tgt_vx"] = tvx;
+  s["tgt_vy"] = tvy;
+  s["tgt_vz"] = tvz;
+  s["accel_cmd_x"] = acx;
+  s["accel_cmd_y"] = acy;
+  s["accel_cmd_z"] = acz;
+  s["los_angle"] = los;
+  s["los_rate"] = losr;
+  s["v_closing"] = vc;
+  s["range"] = rng;
+  s["nav_x"] = nx;
+  s["nav_y"] = ny;
+  s["nav_z"] = nz;
   s["nav_nis"] = nis;
-  s["imu_accel_true_x"] = imu_at_x; s["imu_accel_meas_x"] = imu_am_x;
-  s["imu_gyro_true_x"] = imu_gt_x; s["imu_gyro_meas_x"] = imu_gm_x;
-  s["seeker_los_true"] = sk_t; s["seeker_los_meas"] = sk_m;
+  s["imu_accel_true_x"] = imu_at_x;
+  s["imu_accel_meas_x"] = imu_am_x;
+  s["imu_gyro_true_x"] = imu_gt_x;
+  s["imu_gyro_meas_x"] = imu_gm_x;
+  s["seeker_los_true"] = sk_t;
+  s["seeker_los_meas"] = sk_m;
   return s;
 }
 
@@ -108,28 +153,33 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
   auto fmt = [](std::ostringstream& os) { os.precision(9); };
 
   std::ostringstream veh, tgt, gnc, sens;
-  fmt(veh); fmt(tgt); fmt(gnc); fmt(sens);
+  fmt(veh);
+  fmt(tgt);
+  fmt(gnc);
+  fmt(sens);
 
   veh << "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach\n";
   tgt << "t,x,y,z,vx,vy,vz\n";
-  gnc << "t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,range,nav_x,nav_y,nav_z,nav_nis\n";
-  sens << "t,imu_accel_true_x,imu_accel_meas_x,imu_gyro_true_x,imu_gyro_meas_x,seeker_los_true,seeker_los_meas\n";
+  gnc << "t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,"
+         "range,nav_x,nav_y,nav_z,nav_nis\n";
+  sens << "t,imu_accel_true_x,imu_accel_meas_x,imu_gyro_true_x,imu_gyro_meas_x,seeker_los_true,"
+          "seeker_los_meas\n";
 
   for (const auto& f : r.frames) {
     const Vector3 e = f.veh_att.toEuler();
     veh << f.t << ',' << f.veh_pos.x << ',' << f.veh_pos.y << ',' << f.veh_pos.z << ','
-        << f.veh_vel.x << ',' << f.veh_vel.y << ',' << f.veh_vel.z << ','
-        << e.x << ',' << e.y << ',' << e.z << ',' << f.mass << ',' << f.mach << '\n';
+        << f.veh_vel.x << ',' << f.veh_vel.y << ',' << f.veh_vel.z << ',' << e.x << ',' << e.y
+        << ',' << e.z << ',' << f.mass << ',' << f.mach << '\n';
     tgt << f.t << ',' << f.tgt_pos.x << ',' << f.tgt_pos.y << ',' << f.tgt_pos.z << ','
         << f.tgt_vel.x << ',' << f.tgt_vel.y << ',' << f.tgt_vel.z << '\n';
     gnc << f.t << ',' << f.accel_cmd.x << ',' << f.accel_cmd.y << ',' << f.accel_cmd.z << ','
         << f.fin_deflection.x << ',' << f.fin_deflection.y << ',' << f.fin_deflection.z << ','
         << f.los_angle << ',' << f.los_rate << ',' << f.v_closing << ',' << f.range << ','
-        << f.nav_pos_est.x << ',' << f.nav_pos_est.y << ',' << f.nav_pos_est.z << ','
-        << f.nav_nis << '\n';
+        << f.nav_pos_est.x << ',' << f.nav_pos_est.y << ',' << f.nav_pos_est.z << ',' << f.nav_nis
+        << '\n';
     sens << f.t << ',' << f.imu_accel_true.x << ',' << f.imu_accel_meas.x << ','
-         << f.imu_gyro_true.x << ',' << f.imu_gyro_meas.x << ','
-         << f.seeker_los_true << ',' << f.seeker_los_meas << '\n';
+         << f.imu_gyro_true.x << ',' << f.imu_gyro_meas.x << ',' << f.seeker_los_true << ','
+         << f.seeker_los_meas << '\n';
   }
 
   return {{"vehicle.csv", veh.str()},

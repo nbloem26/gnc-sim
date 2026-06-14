@@ -5,7 +5,8 @@
 // State x (6): [rel_pos(3), rel_vel(3)].
 // Predict (nearly-constant-velocity) with the interceptor's own achieved acceleration as a known
 // control input — gravity is common-mode between target and vehicle in the relative frame so it
-// cancels; u = -a_vehicle. Update with a nonlinear az/el/range measurement (Joseph-form covariance).
+// cancels; u = -a_vehicle. Update with a nonlinear az/el/range measurement (Joseph-form
+// covariance).
 //
 // Fixed-size hand-rolled linear algebra (std::array) — no Eigen / external dependency, so the EKF
 // stays bit-for-bit identical between native (libstdc++) and WASM (libc++).
@@ -39,17 +40,17 @@ class Ekf {
 
   Vector3 relPos() const { return {x_[0], x_[1], x_[2]}; }
   Vector3 relVel() const { return {x_[3], x_[4], x_[5]}; }
-  double nis() const { return nis_; }            // last normalized innovation squared (dof = 3)
+  double nis() const { return nis_; }  // last normalized innovation squared (dof = 3)
   bool initialized() const { return initialized_; }
 
  private:
   double dt_;
-  double q_;                          // process-accel PSD
-  std::array<double, 3> r_diag_;      // measurement noise variances [az^2, el^2, range^2]
+  double q_;                      // process-accel PSD
+  std::array<double, 3> r_diag_;  // measurement noise variances [az^2, el^2, range^2]
 
   bool initialized_ = false;
-  std::array<double, 6> x_{};         // state estimate
-  std::array<double, 36> p_{};        // 6x6 covariance (row-major)
+  std::array<double, 6> x_{};   // state estimate
+  std::array<double, 36> p_{};  // 6x6 covariance (row-major)
   double nis_ = 0.0;
 };
 

@@ -53,9 +53,9 @@ class LoopClosureResult:
     def summary_line(self) -> str:
         return (
             f"white: config {self.config_white:.3e} vs sim {self.recovered_white:.3e} "
-            f"({self.white_err_frac*100:+.1f}%)  |  "
+            f"({self.white_err_frac * 100:+.1f}%)  |  "
             f"sigma_GM: config {self.config_sigma_gm:.3e} vs sim {self.recovered_sigma_gm:.3e}  "
-            f"| {self.n_samples} samples @ {1/self.dt:.0f} Hz  "
+            f"| {self.n_samples} samples @ {1 / self.dt:.0f} Hz  "
             f"-> {'PASS' if self.passed else 'FAIL'}"
         )
 
@@ -69,15 +69,27 @@ def _loop_closure_config(dt: float = 0.01) -> dict:
     """
     imu = json.loads(CONFIG_PATH.read_text())["imu"]
     return {
-        "scenario": "loop_closure", "model": "3dof", "seed": 7, "dt": dt, "t_end": 300.0,
+        "scenario": "loop_closure",
+        "model": "3dof",
+        "seed": 7,
+        "dt": dt,
+        "t_end": 300.0,
         "integrator": "rk4",
         "env": {"g0": 9.80665, "altitude_dependent_g": False, "atmosphere": False},
         "aero": {"ref_area": 0.001, "cd_mach": [[0.0, 0.05]]},
-        "vehicle": {"pos0": [0, 0, 0], "launch_speed": 1400, "launch_elevation_deg": 89.5,
-                    "launch_azimuth_deg": 0, "mass0": 100.0},
+        "vehicle": {
+            "pos0": [0, 0, 0],
+            "launch_speed": 1400,
+            "launch_elevation_deg": 89.5,
+            "launch_azimuth_deg": 0,
+            "mass0": 100.0,
+        },
         "guidance": {"law": "none"},
-        "sensors": {"enable": True, "imu": imu,
-                    "seeker": {"los_white": 0.0, "los_bias": 0.0, "glint": 0.0}},
+        "sensors": {
+            "enable": True,
+            "imu": imu,
+            "seeker": {"los_white": 0.0, "los_bias": 0.0, "glint": 0.0},
+        },
         "target": {"pos0": [9_999_999, 0, 0], "vel0": [0, 0, 0], "maneuver": "constant"},
     }
 
@@ -98,9 +110,8 @@ def run_loop_closure(white_tol_frac: float = 0.15, make_figure: bool = True) -> 
     dt = cfg["dt"]
     sf = imu_cfg["accel_scale_factor"]
     # Residual isolates additive bias + white (remove the multiplicative scale-factor term).
-    residual = (
-        sensors["imu_accel_meas_x"].to_numpy()
-        - sensors["imu_accel_true_x"].to_numpy() * (1.0 + sf)
+    residual = sensors["imu_accel_meas_x"].to_numpy() - sensors["imu_accel_true_x"].to_numpy() * (
+        1.0 + sf
     )
     # Drop any leading transient (first 1 s) and de-mean.
     skip = int(round(1.0 / dt))

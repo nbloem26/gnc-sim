@@ -15,8 +15,8 @@ class Imu {
  public:
   Imu(const ImuNoise& cfg, double dt, Rng& rng) : cfg_(cfg), dt_(dt), rng_(rng) {}
 
-  void measure(const Vector3& accel_true, const Vector3& gyro_true,
-               Vector3& accel_meas, Vector3& gyro_meas);
+  void measure(const Vector3& accel_true, const Vector3& gyro_true, Vector3& accel_meas,
+               Vector3& gyro_meas);
 
  private:
   ImuNoise cfg_;

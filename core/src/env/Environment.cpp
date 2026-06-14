@@ -13,9 +13,9 @@ namespace gncsim {
 namespace {
 
 // --- Shared physical constants -------------------------------------------------------------
-constexpr double kG0 = 9.80665;        // standard gravity [m/s^2]
-constexpr double kRgas = 287.05287;    // specific gas constant for air [J/(kg*K)]
-constexpr double kGamma = 1.4;         // ratio of specific heats for air [-]
+constexpr double kG0 = 9.80665;      // standard gravity [m/s^2]
+constexpr double kRgas = 287.05287;  // specific gas constant for air [J/(kg*K)]
+constexpr double kGamma = 1.4;       // ratio of specific heats for air [-]
 
 // Gravity model uses the mean Earth radius for the inverse-square falloff.
 constexpr double kReGravity = 6371000.0;  // [m]
@@ -65,8 +65,8 @@ AtmSample atmosphereUSSA76(double altitude_m) {
   // USSA76 layer breakpoints, defined at geopotential base altitudes.
   // {base geopotential altitude [m], lapse rate dT/dh [K/m]}.
   struct Layer {
-    double base_h;   // geopotential base altitude [m]
-    double lapse;    // lapse rate [K/m]
+    double base_h;  // geopotential base altitude [m]
+    double lapse;   // lapse rate [K/m]
   };
   // Covers 0..84852 m geopotential (~86 km geometric). The 7th layer top (71 km base) extends to
   // 84852 m geopotential, which corresponds to 86 km geometric — the documented upper bound.
@@ -83,8 +83,8 @@ AtmSample atmosphereUSSA76(double altitude_m) {
   static constexpr double kTopH = 84852.0;  // geopotential top of modeled region [m]
 
   // Sea-level reference conditions (USSA76).
-  static constexpr double kT0 = 288.15;     // [K]
-  static constexpr double kP0 = 101325.0;   // [Pa]
+  static constexpr double kT0 = 288.15;    // [K]
+  static constexpr double kP0 = 101325.0;  // [Pa]
 
   // Precompute base temperature and base pressure at the bottom of each layer by integrating the
   // formulas upward from sea level. Done once on first call (function-local statics).
@@ -100,12 +100,11 @@ AtmSample atmosphereUSSA76(double altitude_m) {
       const double t_top = base_temp[i - 1] + prev.lapse * dh;  // temp at top of previous layer
       if (prev.lapse == 0.0) {
         // Isothermal layer.
-        base_pres[i] = base_pres[i - 1] *
-                       std::exp(-kG0 * dh / (kRgas * base_temp[i - 1]));
+        base_pres[i] = base_pres[i - 1] * std::exp(-kG0 * dh / (kRgas * base_temp[i - 1]));
       } else {
         // Linear-lapse layer.
-        base_pres[i] = base_pres[i - 1] *
-                       std::pow(t_top / base_temp[i - 1], -kG0 / (prev.lapse * kRgas));
+        base_pres[i] =
+            base_pres[i - 1] * std::pow(t_top / base_temp[i - 1], -kG0 / (prev.lapse * kRgas));
       }
       base_temp[i] = t_top;
     }

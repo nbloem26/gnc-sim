@@ -9,7 +9,6 @@ cuts estimator variance ~sqrt(3), tightening the bias-instability / RRW recovery
 from __future__ import annotations
 
 import numpy as np
-
 from allan_variance import RegimeFit, identify_regimes, overlapping_allan_deviation
 
 
@@ -40,5 +39,6 @@ def characterize_axes(
         adevs.append(ad)
     adev_mean = np.mean(adevs, axis=0)
 
+    assert taus is not None and edf is not None  # samples is reshaped to >=1 column
     fit = identify_regimes(taus, adev_mean, edf)
     return taus, adev_mean, edf, fit

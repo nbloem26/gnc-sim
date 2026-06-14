@@ -24,7 +24,6 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-
 from noise_model import AxisNoise, generate_axis, true_params_from_model
 
 # --- Repo-relative paths (only the repo root is absolute, via this file's location) ---
@@ -51,17 +50,17 @@ RAW_PATH = SENSORS_DIR / "imu_raw.npz"
 # separately identifiable above the bias floor in a multi-hour record; the ground-truth
 # labels reflect this (see ``noise_model.true_params_from_model``).
 TRUE_ACCEL = AxisNoise(
-    white=6.0e-4,             # VRW density  (m/s^2)/sqrt(Hz)  (~36 ug/sqrt(Hz))
+    white=6.0e-4,  # VRW density  (m/s^2)/sqrt(Hz)  (~36 ug/sqrt(Hz))
     bias_instability=4.56e-4,  # GM steady-state std (sigma_GM); Allan hump ~2.8e-4 m/s^2
-    bias_tau=100.0,            # GM correlation time [s]
-    rrw=1.5e-5,               # (m/s^2)/sqrt(s) — GM-bounded, below the bias floor
+    bias_tau=100.0,  # GM correlation time [s]
+    rrw=1.5e-5,  # (m/s^2)/sqrt(s) — GM-bounded, below the bias floor
     scale_factor=1.0e-3,
 )
 TRUE_GYRO = AxisNoise(
-    white=9.0e-5,             # ARW density  (rad/s)/sqrt(Hz)  (~0.31 deg/sqrt(hr))
+    white=9.0e-5,  # ARW density  (rad/s)/sqrt(Hz)  (~0.31 deg/sqrt(hr))
     bias_instability=1.82e-5,  # GM steady-state std (sigma_GM); Allan hump ~1.1e-5 rad/s
-    bias_tau=100.0,            # GM correlation time [s]
-    rrw=4.0e-7,               # (rad/s)/sqrt(s) — GM-bounded, below the bias floor
+    bias_tau=100.0,  # GM correlation time [s]
+    rrw=4.0e-7,  # (rad/s)/sqrt(s) — GM-bounded, below the bias floor
     scale_factor=5.0e-4,
 )
 
@@ -129,8 +128,10 @@ def generate(
 
 
 def _print_true(labels_accel: np.ndarray, labels_gyro: np.ndarray, dt: float, n: int) -> None:
-    print(f"Generated static IMU record: {n} samples @ {1/dt:.0f} Hz "
-          f"({n*dt/3600:.2f} h), dt={dt:.4f} s")
+    print(
+        f"Generated static IMU record: {n} samples @ {1 / dt:.0f} Hz "
+        f"({n * dt / 3600:.2f} h), dt={dt:.4f} s"
+    )
     print(f"  saved -> {RAW_PATH.relative_to(SENSORS_DIR.parent)}")
     print("\nTRUE injected parameters (continuous-time units):")
     hdr = f"  {'channel':8s} {'white':>11s} {'bias_instab':>12s} {'tau[s]':>8s} {'rrw':>11s}"
@@ -148,8 +149,9 @@ def main() -> None:
     args = ap.parse_args()
 
     data = generate(args.duration, args.rate, args.seed)
-    _print_true(data["true_accel_labels"], data["true_gyro_labels"], data["dt"],
-                data["accel"].shape[0])
+    _print_true(
+        data["true_accel_labels"], data["true_gyro_labels"], data["dt"], data["accel"].shape[0]
+    )
 
 
 if __name__ == "__main__":

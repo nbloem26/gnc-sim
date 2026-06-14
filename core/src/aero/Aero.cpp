@@ -89,7 +89,8 @@ Vector3 AeroModel::force6dof(const Vector3& vel_world, const Quaternion& att,
   if (perp_norm <= kMinAlpha) return drag;
   const Vector3 lift_dir = perp / perp_norm;
 
-  const double normal_mag = 0.5 * atm.density * speed * speed * cfg_.ref_area * cfg_.cn_alpha * alpha;
+  const double normal_mag =
+      0.5 * atm.density * speed * speed * cfg_.ref_area * cfg_.cn_alpha * alpha;
   const Vector3 normal = lift_dir * normal_mag;
 
   return drag + normal;

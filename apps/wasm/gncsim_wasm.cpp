@@ -1,10 +1,10 @@
 // gnc-sim — WebAssembly entry point (Emscripten). Exposes run_sim(configJson) -> resultJson to JS.
 // The Next.js app calls this client-side; same pure core as the native CLI, so results are
 // bit-for-bit comparable (see the native<->WASM parity test).
+#include <emscripten/bind.h>
+
 #include <exception>
 #include <string>
-
-#include <emscripten/bind.h>
 
 #include "gncsim/core/Config.hpp"
 #include "gncsim/core/Serialize.hpp"
@@ -22,6 +22,4 @@ std::string run_sim(const std::string& config_json) {
   }
 }
 
-EMSCRIPTEN_BINDINGS(gncsim_module) {
-  emscripten::function("run_sim", &run_sim);
-}
+EMSCRIPTEN_BINDINGS(gncsim_module) { emscripten::function("run_sim", &run_sim); }

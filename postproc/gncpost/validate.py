@@ -48,12 +48,21 @@ def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
     g = 9.80665
     speed, elev = 300.0, 45.0
     cfg = {
-        "scenario": "val_ballistic", "model": "3dof", "seed": 1, "dt": 0.002, "t_end": 30.0,
+        "scenario": "val_ballistic",
+        "model": "3dof",
+        "seed": 1,
+        "dt": 0.002,
+        "t_end": 30.0,
         "integrator": "rk4",
         "env": {"g0": g, "altitude_dependent_g": False, "atmosphere": False},
         "aero": {"ref_area": 0.02, "cd_mach": [[0.0, 0.3]]},
-        "vehicle": {"pos0": [0, 0, 0], "launch_speed": speed, "launch_elevation_deg": elev,
-                    "launch_azimuth_deg": 0, "mass0": 22.0},
+        "vehicle": {
+            "pos0": [0, 0, 0],
+            "launch_speed": speed,
+            "launch_elevation_deg": elev,
+            "launch_azimuth_deg": 0,
+            "mass0": 22.0,
+        },
         "guidance": {"law": "none"},
         "sensors": {"enable": False},
         "target": {"pos0": [9_999_999, 0, 0], "vel0": [0, 0, 0], "maneuver": "constant"},
@@ -67,9 +76,11 @@ def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
     z_an = vz0 * t - 0.5 * g * t * t
     err = np.sqrt((veh["x"] - x_an) ** 2 + (veh["z"] - z_an) ** 2).max()
     return CheckResult(
-        "ballistic_parabola", err < tol_m,
-        f"max |pos - analytic| = {err*1e3:.3f} mm over {len(t)} steps",
-        metric=float(err), tolerance=tol_m,
+        "ballistic_parabola",
+        err < tol_m,
+        f"max |pos - analytic| = {err * 1e3:.3f} mm over {len(t)} steps",
+        metric=float(err),
+        tolerance=tol_m,
     )
 
 
@@ -81,12 +92,21 @@ def check_terminal_velocity(tmp: Path, tol_frac: float = 0.02) -> CheckResult:
     g, mass, cd, area = 9.80665, 5.0, 1.0, 0.05
     drop_alt = 2000.0
     cfg = {
-        "scenario": "val_vterm", "model": "3dof", "seed": 1, "dt": 0.002, "t_end": 120.0,
+        "scenario": "val_vterm",
+        "model": "3dof",
+        "seed": 1,
+        "dt": 0.002,
+        "t_end": 120.0,
         "integrator": "rk4",
         "env": {"g0": g, "altitude_dependent_g": False, "atmosphere": True},
         "aero": {"ref_area": area, "cd_mach": [[0.0, cd], [5.0, cd]]},
-        "vehicle": {"pos0": [0, 0, drop_alt], "launch_speed": 0.001,
-                    "launch_elevation_deg": -90, "launch_azimuth_deg": 0, "mass0": mass},
+        "vehicle": {
+            "pos0": [0, 0, drop_alt],
+            "launch_speed": 0.001,
+            "launch_elevation_deg": -90,
+            "launch_azimuth_deg": 0,
+            "mass0": mass,
+        },
         "guidance": {"law": "none"},
         "sensors": {"enable": False},
         "target": {"pos0": [9_999_999, 0, 0], "vel0": [0, 0, 0], "maneuver": "constant"},
@@ -103,10 +123,12 @@ def check_terminal_velocity(tmp: Path, tol_frac: float = 0.02) -> CheckResult:
     v_term = terminal_velocity(mass, cd, area, z_mean, g)
     err = abs(abs(vz_sim) - v_term) / v_term
     return CheckResult(
-        "terminal_velocity", err < tol_frac,
+        "terminal_velocity",
+        err < tol_frac,
         f"sim |vz|={abs(vz_sim):.2f} m/s vs analytic {v_term:.2f} m/s "
-        f"(rho @ z={z_mean:.0f} m), err {err*100:.2f}%",
-        metric=float(err), tolerance=tol_frac,
+        f"(rho @ z={z_mean:.0f} m), err {err * 100:.2f}%",
+        metric=float(err),
+        tolerance=tol_frac,
     )
 
 
@@ -122,11 +144,13 @@ def check_atmosphere(tol_frac: float = 0.05) -> CheckResult:
         e_rho = abs(s.density / rho_ref - 1.0)
         e_T = abs(s.temperature / T_ref - 1.0)
         worst = max(worst, e_rho, e_T)
-        detail_bits.append(f"{alt//1000}km:rho{e_rho*100:.1f}%")
+        detail_bits.append(f"{alt // 1000}km:rho{e_rho * 100:.1f}%")
     return CheckResult(
-        "ussa76_table", worst < tol_frac,
-        "max table error " + f"{worst*100:.2f}% (" + ", ".join(detail_bits) + ")",
-        metric=float(worst), tolerance=tol_frac,
+        "ussa76_table",
+        worst < tol_frac,
+        "max table error " + f"{worst * 100:.2f}% (" + ", ".join(detail_bits) + ")",
+        metric=float(worst),
+        tolerance=tol_frac,
     )
 
 
@@ -136,13 +160,24 @@ def check_atmosphere(tol_frac: float = 0.05) -> CheckResult:
 def check_pronav_intercept(tmp: Path, tol_m: float = 1.0) -> CheckResult:
     """Sensors off, PN guidance: miss distance < 1 m against a constant-velocity target."""
     cfg = {
-        "scenario": "val_pronav", "model": "3dof", "seed": 1, "dt": 0.002, "t_end": 40.0,
+        "scenario": "val_pronav",
+        "model": "3dof",
+        "seed": 1,
+        "dt": 0.002,
+        "t_end": 40.0,
         "integrator": "rk4",
         "env": {"g0": 9.80665, "altitude_dependent_g": False, "atmosphere": True},
-        "aero": {"ref_area": 0.02,
-                 "cd_mach": [[0.0, 0.28], [0.9, 0.42], [1.0, 0.58], [1.5, 0.43], [3.0, 0.3]]},
-        "vehicle": {"pos0": [0, 0, 0], "launch_speed": 900, "launch_elevation_deg": 42,
-                    "launch_azimuth_deg": 0, "mass0": 22.0},
+        "aero": {
+            "ref_area": 0.02,
+            "cd_mach": [[0.0, 0.28], [0.9, 0.42], [1.0, 0.58], [1.5, 0.43], [3.0, 0.3]],
+        },
+        "vehicle": {
+            "pos0": [0, 0, 0],
+            "launch_speed": 900,
+            "launch_elevation_deg": 42,
+            "launch_azimuth_deg": 0,
+            "mass0": 22.0,
+        },
         "guidance": {"law": "pronav", "nav_constant": 4.0, "max_accel": 400.0},
         "sensors": {"enable": False},
         "target": {"pos0": [9000, 0, 3500], "vel0": [-280, 0, -40], "maneuver": "constant"},
@@ -151,9 +186,11 @@ def check_pronav_intercept(tmp: Path, tol_m: float = 1.0) -> CheckResult:
     run = load_run(out)
     miss = run.miss_distance
     return CheckResult(
-        "pronav_intercept", run.intercept and miss < tol_m,
-        f"intercept={run.intercept}, miss_distance={miss*1e2:.2f} cm",
-        metric=float(miss), tolerance=tol_m,
+        "pronav_intercept",
+        run.intercept and miss < tol_m,
+        f"intercept={run.intercept}, miss_distance={miss * 1e2:.2f} cm",
+        metric=float(miss),
+        tolerance=tol_m,
     )
 
 

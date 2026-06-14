@@ -16,16 +16,16 @@ namespace gncsim {
 enum class Integrator { Euler, RK2, RK4 };
 
 struct EnvConfig {
-  double g0 = 9.80665;                 // surface gravity [m/s^2]
-  bool altitude_dependent_g = false;   // inverse-square falloff if true
-  bool atmosphere = true;              // apply USSA76 drag if true
+  double g0 = 9.80665;                // surface gravity [m/s^2]
+  bool altitude_dependent_g = false;  // inverse-square falloff if true
+  bool atmosphere = true;             // apply USSA76 drag if true
 };
 
 struct AeroConfig {
-  double ref_area = 0.05;              // aerodynamic reference area [m^2]
-  double cd0 = 0.3;                    // fallback drag coeff if table empty
+  double ref_area = 0.05;                      // aerodynamic reference area [m^2]
+  double cd0 = 0.3;                            // fallback drag coeff if table empty
   std::vector<std::array<double, 2>> cd_mach;  // (mach, Cd) breakpoints, ascending mach
-  double cn_alpha = 12.0;              // normal-force coeff slope [1/rad] (6DOF)
+  double cn_alpha = 12.0;                      // normal-force coeff slope [1/rad] (6DOF)
 };
 
 struct VehicleConfig {
@@ -38,60 +38,60 @@ struct VehicleConfig {
 };
 
 struct GuidanceConfig {
-  std::string law = "pronav";          // "pronav" | "none"
-  double nav_constant = 3.0;           // PN gain N
-  double max_accel = 300.0;            // accel command limit [m/s^2]
-  double time_constant = 0.0;          // guidance/autopilot lag [s]; 0 = ideal instantaneous
+  std::string law = "pronav";  // "pronav" | "none"
+  double nav_constant = 3.0;   // PN gain N
+  double max_accel = 300.0;    // accel command limit [m/s^2]
+  double time_constant = 0.0;  // guidance/autopilot lag [s]; 0 = ideal instantaneous
 };
 
-struct ControlConfig {                 // 6DOF acceleration autopilot
+struct ControlConfig {  // 6DOF acceleration autopilot
   double kp = 8.0;
   double kd = 2.5;
-  double max_fin_deflection = 0.35;    // [rad]
+  double max_fin_deflection = 0.35;  // [rad]
 };
 
 struct ImuNoise {
-  double accel_white = 0.0;            // velocity random walk -> per-sample accel std [m/s^2]
-  double accel_bias_instability = 0.0; // [m/s^2]
-  double accel_bias_tau = 100.0;       // Gauss-Markov correlation time [s]
-  double accel_rrw = 0.0;              // rate random walk driving accel bias
-  double accel_scale_factor = 0.0;     // fractional
-  double gyro_white = 0.0;             // angle random walk -> per-sample rate std [rad/s]
-  double gyro_bias_instability = 0.0;  // [rad/s]
-  double gyro_bias_tau = 100.0;        // [s]
+  double accel_white = 0.0;             // velocity random walk -> per-sample accel std [m/s^2]
+  double accel_bias_instability = 0.0;  // [m/s^2]
+  double accel_bias_tau = 100.0;        // Gauss-Markov correlation time [s]
+  double accel_rrw = 0.0;               // rate random walk driving accel bias
+  double accel_scale_factor = 0.0;      // fractional
+  double gyro_white = 0.0;              // angle random walk -> per-sample rate std [rad/s]
+  double gyro_bias_instability = 0.0;   // [rad/s]
+  double gyro_bias_tau = 100.0;         // [s]
   double gyro_rrw = 0.0;
   double gyro_scale_factor = 0.0;
 };
 
 struct SeekerNoise {
-  double los_white = 0.0;              // LOS angle measurement noise std [rad]
-  double los_bias = 0.0;               // boresight bias [rad]
-  double glint = 0.0;                  // range-dependent glint coefficient
+  double los_white = 0.0;  // LOS angle measurement noise std [rad]
+  double los_bias = 0.0;   // boresight bias [rad]
+  double glint = 0.0;      // range-dependent glint coefficient
 };
 
 struct SensorConfig {
-  bool enable = false;                 // if false, navigation uses truth (noise-free)
+  bool enable = false;  // if false, navigation uses truth (noise-free)
   ImuNoise imu;
   SeekerNoise seeker;
 };
 
 struct NavConfig {
-  std::string filter = "alpha_beta";   // "alpha_beta" | "ekf"
-  double process_accel_psd = 50.0;     // EKF target-accel PSD q [m^2/s^3] per axis
-  double range_white = 5.0;            // range measurement noise std [m] (EKF range channel)
+  std::string filter = "alpha_beta";  // "alpha_beta" | "ekf"
+  double process_accel_psd = 50.0;    // EKF target-accel PSD q [m^2/s^3] per axis
+  double range_white = 5.0;           // range measurement noise std [m] (EKF range channel)
 };
 
 struct TargetConfig {
   Vector3 pos0{8000.0, 0.0, 3000.0};
   Vector3 vel0{-250.0, 0.0, 0.0};
-  std::string maneuver = "constant";   // "constant" | "weave"
-  double maneuver_g = 3.0;             // lateral accel for weave [g]
-  double maneuver_freq = 0.4;          // [Hz]
-  double maneuver_phase_deg = 0.0;     // weave phase offset [deg] (Monte Carlo randomizes this)
+  std::string maneuver = "constant";  // "constant" | "weave"
+  double maneuver_g = 3.0;            // lateral accel for weave [g]
+  double maneuver_freq = 0.4;         // [Hz]
+  double maneuver_phase_deg = 0.0;    // weave phase offset [deg] (Monte Carlo randomizes this)
 };
 
 struct MonteCarloConfig {
-  int num_cases = 0;                   // 0 => single deterministic run
+  int num_cases = 0;  // 0 => single deterministic run
   double launch_speed_sigma = 0.0;
   double launch_elevation_sigma_deg = 0.0;
   double target_pos_sigma = 0.0;
@@ -99,10 +99,10 @@ struct MonteCarloConfig {
 
 struct SimConfig {
   std::string scenario = "homing";
-  std::string model = "3dof";          // "3dof" | "6dof"
+  std::string model = "3dof";  // "3dof" | "6dof"
   std::uint64_t seed = 1;
-  double dt = 0.005;                   // integration step [s]
-  double t_end = 60.0;                 // max sim time [s]
+  double dt = 0.005;    // integration step [s]
+  double t_end = 60.0;  // max sim time [s]
   Integrator integrator = Integrator::RK4;
   GeodeticOrigin origin;
 

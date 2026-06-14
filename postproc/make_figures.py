@@ -22,7 +22,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from gncpost import REPO_ROOT
 from gncpost.loaders import load_run, load_summary
 from gncpost.montecarlo import compute_stats, plot_cep
@@ -59,7 +58,10 @@ def make_validation_summary() -> bool:
     for r in results:
         rows.append([r.name, "PASS" if r.passed else "FAIL", r.detail])
     table = ax.table(
-        cellText=rows[1:], colLabels=rows[0], loc="center", cellLoc="left",
+        cellText=rows[1:],
+        colLabels=rows[0],
+        loc="center",
+        cellLoc="left",
         colWidths=[0.18, 0.10, 0.72],
     )
     table.auto_set_font_size(False)

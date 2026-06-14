@@ -61,7 +61,8 @@ struct Quaternion {
         sr * cp * cy - cr * sp * sy,
         cr * sp * cy + sr * cp * sy,
         cr * cp * sy - sr * sp * cy,
-    }.normalized();
+    }
+        .normalized();
   }
 
   // Returns (roll, pitch, yaw) in radians.
