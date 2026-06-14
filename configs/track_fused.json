@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "scenario": "track_fused",
   "model": "3dof",
   "seed": 7,
