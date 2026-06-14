@@ -1,0 +1,14 @@
+# One-command self-hosted runner for gnc-sim.
+#   GH_PAT=<token with repo scope> docker compose -f runner/docker-compose.yml up --build
+# The runner is ephemeral (one job per container start); `restart: always` brings the next one up.
+# Scale to N parallel runners:  ... up --build --scale runner=4
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      REPO: ${REPO:-nbloem26/gnc-sim}
+      GH_PAT: ${GH_PAT:?set GH_PAT to a GitHub PAT with repo scope}
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,linux,gnc-sim}
+    restart: always
