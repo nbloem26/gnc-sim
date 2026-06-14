@@ -39,6 +39,7 @@ TEST(Registry, GuidanceKeysResolve) {
 
   EXPECT_NE(reg.makeGuidance("pronav", cfg), nullptr);
   EXPECT_NE(reg.makeGuidance("apn", cfg), nullptr);
+  EXPECT_NE(reg.makeGuidance("zemzev", cfg), nullptr);  // optimal ZEM/ZEV (issue #40)
   EXPECT_NE(reg.makeGuidance("none", cfg), nullptr);
 }
 

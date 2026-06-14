@@ -36,6 +36,23 @@ Vector3 proNavCommand(const Engagement& e, const GuidanceConfig& cfg);
 Vector3 augmentedProNavCommand(const Engagement& e, const GuidanceConfig& cfg,
                                const Vector3& a_target_est);
 
+// Time-to-go estimate [s] for the predictive (ZEM/ZEV) laws: range / closing speed, floored at
+// cfg.zemzev.tgo_floor_s so the 1/tgo^2 law never blows up. Returns the floor when not closing.
+double timeToGo(const Engagement& e, const GuidanceConfig& cfg);
+
+// Optimal ZEM/ZEV guidance (issue #40). Energy-optimal terminal/midcourse law:
+//   a_cmd = (N_zem/tgo^2) * ZEM  +  weight(range) * (N_zev/tgo) * ZEV
+// ZEM (zero-effort miss) = the predicted relative position at intercept if neither side
+// accelerates further, including the estimated target acceleration `a_target_est`:
+//   ZEM = rel_pos + rel_vel*tgo + 0.5*a_target_est*tgo^2.
+// ZEV (zero-effort velocity error) = predicted relative velocity at intercept minus the desired
+// closing velocity (drives the midcourse geometry); faded out near the handover range so the
+// command is continuous across the midcourse->terminal switch. The result is magnitude-limited to
+// cfg.max_accel. Only the "zemzev" law produces a command, and only while closing. `tgo_s` may be
+// supplied by the caller (runner-level filtered estimate); 0 means "compute from the geometry".
+Vector3 zemZevCommand(const Engagement& e, const GuidanceConfig& cfg, const Vector3& a_target_est,
+                      double tgo_s = 0.0);
+
 // Alpha-beta tracker for the relative position/velocity from noisy LOS + range. Construct once
 // per run; call update() each step. Produces nav_pos_est / nav_vel_est used by guidance.
 class Navigator {

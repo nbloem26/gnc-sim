@@ -31,7 +31,8 @@ namespace gncsim {
 // Per-step inputs the guidance law needs beyond the engagement geometry. `a_target_est` is the
 // runner-level estimated target acceleration (used only by the augmented law; ignored by PN).
 struct GuidanceState {
-  Vector3 a_target_est;  // estimated target acceleration [m/s^2] (APN feedforward)
+  Vector3 a_target_est;  // estimated target acceleration [m/s^2] (APN feedforward / ZEM)
+  double tgo_s = 0.0;    // estimated time-to-go to intercept [s] (ZEM/ZEV); 0 = compute from geom
 };
 
 // Maps engagement geometry to a commanded acceleration [m/s^2] (magnitude-limited internally).

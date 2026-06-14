@@ -3,7 +3,7 @@
 // which model, so the Runner is thin orchestration and trade studies are config sweeps.
 //
 // Keys (the strings already used in the data contract / configs):
-//   guidance.law      : "pronav" | "apn" | "none"        -> IGuidance
+//   guidance.law      : "pronav" | "apn" | "zemzev" | "none" -> IGuidance
 //   nav.filter        : "alpha_beta" | "ekf" | "imm"     -> INavigator
 //   trackers.sensors[].type : "radar" | "ir"            -> ISensor
 //   model             : "3dof" | "6dof"                  -> IDynamics

@@ -32,6 +32,7 @@ If you add a model, add a row here too, or CI fails (see `AGENTS.md` → *Adding
 |---|---|---|---|---|---|
 | Guidance | `pronav` (`guidance.law`) | PN issues `N·V_c·(Ω×û_LOS)` ⟂ LOS, limited; intercepts a non-maneuvering target | `gnc_test::ProNav.*`, `runner_test::Runner.NoiseFreeProNavIntercepts` | `homing_3dof` | `validate.py::check_pronav_intercept` |
 | Guidance | `apn` (`guidance.law`) | Target-accel feedforward applied only under `apn`; beats PN vs a weaving target | `apn_test::Apn.*` | `montecarlo` | `pkill.py` campaign |
+| Guidance | `zemzev` (`guidance.law`) | Optimal ZEM/ZEV drives miss→0 vs non-maneuvering & constant-accel targets; continuous midcourse→terminal handover; divert/ACS respects its authority limit | `optimal_guidance_test::ZemZev.*`, `registry_test::Registry.GuidanceKeysResolve` | — | — |
 | Guidance | `none` (`guidance.law`) | No command issued; trajectory is purely ballistic | `gnc_test::ProNav.NoneLawGivesZeroCommand`, `registry_test::Registry.NoneGuidanceCommandsZero` | `projectile_3dof` | `validate.py::check_ballistic` |
 | Navigation | `alpha_beta` (`nav.filter`) | Fixed-gain tracker recovers constant-velocity relative motion | `gnc_test::Navigator.TracksConstantVelocityRelativeMotion`, `registry_test::Registry.NavigatorKeysResolve` | `homing_3dof` | — |
 | Navigation | `ekf` (`nav.filter`) | EKF converges on a CV track; NIS mean ≈ DOF (statistically consistent) | `ekf_test::Ekf.*` | — | — |
