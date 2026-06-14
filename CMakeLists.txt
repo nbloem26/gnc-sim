@@ -14,6 +14,29 @@ option(GNCSIM_BUILD_TESTS "Build C++ unit tests" ON)
 option(GNCSIM_BUILD_CLI "Build the native CLI" ON)
 option(GNCSIM_BUILD_PYTHON "Build the pybind11 Python bindings (bindings/)" OFF)
 
+# --- Test-depth tooling (issue #51), all opt-in so the DEFAULT build/test path is unchanged. ---
+# Comma-separated sanitizer set, e.g. -DGNCSIM_SANITIZE=address,undefined. Empty (default) = off.
+# Applies to every native target (library + CLI + tests) so CTest runs the whole suite instrumented.
+set(GNCSIM_SANITIZE "" CACHE STRING
+  "Comma-separated sanitizers to enable (e.g. address,undefined). Empty = off.")
+# Coverage instrumentation (gcov/--coverage) for the coverage CI job. Off by default.
+option(GNCSIM_COVERAGE "Build native targets with gcov coverage instrumentation" OFF)
+# libFuzzer config-loader harness (fuzz/). Requires Clang. Off by default; never affects the
+# default build or CTest (the portable fallback lives in tests/config_fuzz_stress_test.cpp).
+option(GNCSIM_FUZZ "Build the libFuzzer config-loader harness (requires Clang)" OFF)
+
+if(GNCSIM_SANITIZE AND NOT EMSCRIPTEN)
+  message(STATUS "gnc-sim: enabling sanitizers: ${GNCSIM_SANITIZE}")
+  add_compile_options(-fsanitize=${GNCSIM_SANITIZE} -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=${GNCSIM_SANITIZE})
+endif()
+
+if(GNCSIM_COVERAGE AND NOT EMSCRIPTEN)
+  message(STATUS "gnc-sim: enabling gcov coverage instrumentation")
+  add_compile_options(--coverage -O0 -g)
+  add_link_options(--coverage)
+endif()
+
 include(FetchContent)
 
 # nlohmann/json — header-only, also works under Emscripten.
@@ -33,6 +56,10 @@ if(NOT EMSCRIPTEN)
   if(GNCSIM_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+  endif()
+  # libFuzzer harness (issue #51), opt-in and Clang-only — see fuzz/CMakeLists.txt.
+  if(GNCSIM_FUZZ)
+    add_subdirectory(fuzz)
   endif()
   # Python SDK (pybind11) — native-only client of the pure core, off by default (issue #32).
   if(GNCSIM_BUILD_PYTHON)

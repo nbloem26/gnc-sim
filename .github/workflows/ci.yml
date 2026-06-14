@@ -131,3 +131,109 @@ jobs:
         with:
           name: web-out
           path: web/out
+
+  # --- Test-depth jobs (issue #51). All ADDITIVE: each builds the tests in a separate build dir
+  # behind an opt-in CMake flag, so the default `native` job above is untouched. ---
+
+  sanitizers:
+    name: Sanitizers (ASan + UBSan CTest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build tests with ASan + UBSan
+        run: |
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DGNCSIM_SANITIZE=address,undefined
+          cmake --build build-asan -j"$(nproc)"
+      - name: Run CTest under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-asan --output-on-failure
+
+  clang-tidy:
+    name: clang-tidy (core + apps/cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential clang-tidy
+      - name: Generate compile_commands.json
+        run: cmake -S . -B build-tidy -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Run clang-tidy
+        run: |
+          # Lint the natively-compiled translation units only (apps/wasm needs Emscripten headers).
+          mapfile -t files < <(find core apps/cli -name '*.cpp' -not -path '*/build*/*' | sort)
+          echo "Linting ${#files[@]} files"
+          clang-tidy -p build-tidy --warnings-as-errors='*' "${files[@]}"
+
+  coverage:
+    name: Coverage (gcov / gcovr summary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+          pip install gcovr==7.2
+      - name: Build instrumented tests
+        run: |
+          cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DGNCSIM_COVERAGE=ON
+          cmake --build build-cov -j"$(nproc)"
+      - name: Run tests
+        run: ctest --test-dir build-cov --output-on-failure
+      - name: Coverage summary (core/)
+        run: |
+          gcovr --root . --filter 'core/' --print-summary \
+            --xml-pretty -o coverage.xml build-cov
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  build-matrix:
+    name: Build matrix (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc, cxx: g++, apt: build-essential }
+          - { cc: clang, cxx: clang++, apt: clang }
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build ${{ matrix.apt }}
+      - name: Build + test with ${{ matrix.cc }}
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B build-${{ matrix.cc }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-${{ matrix.cc }} -j"$(nproc)"
+          ctest --test-dir build-${{ matrix.cc }} --output-on-failure
+
+  fuzz:
+    name: Config fuzzer (libFuzzer, smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Clang toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang
+      - name: Build libFuzzer harness
+        env: { CC: clang, CXX: clang++ }
+        run: |
+          cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=Debug -DGNCSIM_FUZZ=ON \
+            -DGNCSIM_BUILD_TESTS=OFF -DGNCSIM_BUILD_CLI=OFF
+          cmake --build build-fuzz -j"$(nproc)" --target config_fuzzer
+      - name: Fuzz briefly over the seed corpus
+        run: |
+          # Short, time-boxed run: replay the corpus + mutate for 60s. A crash artifact fails the job.
+          ./build-fuzz/fuzz/config_fuzzer -max_total_time=60 -timeout=10 fuzz/corpus
