@@ -14,6 +14,7 @@
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
+#include "gncsim/gnc/Imm.hpp"
 
 namespace gncsim {
 
@@ -86,6 +87,25 @@ class EkfNavigator final : public INavigator {
 
  private:
   Ekf ekf_;
+};
+
+// Interacting Multiple Model navigator (issue #36): a bank of constant-velocity + maneuver
+// nearly-constant-velocity filters mixed by mode probability. Consumes the same az/el/range
+// channel as the EKF; exposes the mode-probability-weighted combined NIS. Selected by
+// nav.filter == "imm".
+class ImmNavigator final : public INavigator {
+ public:
+  ImmNavigator(double dt, double q_cv, double q_man, double sigma_az, double sigma_el,
+               double sigma_range, double p_stay)
+      : imm_(dt, q_cv, q_man, sigma_az, sigma_el, sigma_range, p_stay) {}
+  void predict(const Vector3& a_vehicle) override { imm_.predict(a_vehicle); }
+  void update(const NavMeasurement& z) override { imm_.update(z.az, z.el, z.range); }
+  Vector3 relPos() const override { return imm_.relPos(); }
+  Vector3 relVel() const override { return imm_.relVel(); }
+  double nis() const override { return imm_.nis(); }
+
+ private:
+  Imm imm_;
 };
 
 // =============================================================================================
@@ -221,6 +241,10 @@ std::unique_ptr<INavigator> ModelRegistry::makeNavigator(const std::string& filt
   if (filter == "ekf") {
     return std::make_unique<EkfNavigator>(dt, nav.process_accel_psd, seeker.los_white,
                                           seeker.los_white, nav.range_white);
+  }
+  if (filter == "imm") {
+    return std::make_unique<ImmNavigator>(dt, nav.imm_q_cv, nav.imm_q_man, seeker.los_white,
+                                          seeker.los_white, nav.range_white, nav.imm_p_stay);
   }
   throw std::invalid_argument("ModelRegistry: unknown nav.filter '" + filter + "'");
 }

@@ -88,9 +88,14 @@ struct SensorConfig {
 };
 
 struct NavConfig {
-  std::string filter = "alpha_beta";  // "alpha_beta" | "ekf"
+  std::string filter = "alpha_beta";  // "alpha_beta" | "ekf" | "imm"
   double process_accel_psd = 50.0;    // EKF target-accel PSD q [m^2/s^3] per axis
   double range_white = 5.0;           // range measurement noise std [m] (EKF range channel)
+  // IMM (nav.filter == "imm") model bank: a constant-velocity model (low PSD) and a maneuver model
+  // (high PSD), mixed by mode probability. Defaults give a quiescent vs ~hard-maneuver pair.
+  double imm_q_cv = 0.5;      // constant-velocity model process-accel PSD q [m^2/s^3]
+  double imm_q_man = 3000.0;  // maneuver model process-accel PSD q [m^2/s^3]
+  double imm_p_stay = 0.999;  // Markov mode self-transition probability (mode stickiness)
 };
 
 struct TargetConfig {

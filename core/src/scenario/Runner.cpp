@@ -401,8 +401,10 @@ SimResult runSimulation(const SimConfig& cfg) {
   Seeker seeker(cfg.sensors.seeker, rng);
 
   // Which nav filter is active drives the measurement-building branch + nav telemetry below. The
-  // navigator itself is resolved above; this flag only selects how the Runner feeds it.
-  const bool use_ekf = (cfg.nav.filter == "ekf");
+  // navigator itself is resolved above; this flag only selects how the Runner feeds it. Both the
+  // EKF and the IMM (issue #36) consume the nonlinear az/el/range measurement, so they share the
+  // same measurement-building branch — the navigator object differs, the feed does not.
+  const bool use_ekf = (cfg.nav.filter == "ekf" || cfg.nav.filter == "imm");
 
   Autopilot autopilot(cfg.control);
 

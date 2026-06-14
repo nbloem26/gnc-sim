@@ -166,6 +166,9 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.nav.filter = get_or<std::string>(n, "filter", c.nav.filter);
     c.nav.process_accel_psd = get_or<double>(n, "process_accel_psd", c.nav.process_accel_psd);
     c.nav.range_white = get_or<double>(n, "range_white", c.nav.range_white);
+    c.nav.imm_q_cv = get_or<double>(n, "imm_q_cv", c.nav.imm_q_cv);
+    c.nav.imm_q_man = get_or<double>(n, "imm_q_man", c.nav.imm_q_man);
+    c.nav.imm_p_stay = get_or<double>(n, "imm_p_stay", c.nav.imm_p_stay);
   }
 
   if (j.contains("target")) {
