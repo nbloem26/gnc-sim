@@ -27,6 +27,15 @@ Engagement computeEngagement(const EntityState& vehicle, const EntityState& targ
 // Proportional Navigation: a_cmd = N * Vc * (LOS_unit x los_rate_vec), magnitude-limited.
 Vector3 proNavCommand(const Engagement& e, const GuidanceConfig& cfg);
 
+// Augmented Proportional Navigation: PN plus a target-acceleration feedforward.
+//   a_cmd = N * Vc * (omega x LOS_unit) + (N/2) * a_T_perp
+// where a_T_perp is the estimated target acceleration projected perpendicular to the LOS. The
+// feedforward cancels the steady-state miss PN alone leaves against an accelerating target. The
+// result is magnitude-limited to cfg.max_accel. a_target_est is supplied by the caller (estimated
+// at the runner level from the navigation relative-velocity derivative).
+Vector3 augmentedProNavCommand(const Engagement& e, const GuidanceConfig& cfg,
+                               const Vector3& a_target_est);
+
 // Alpha-beta tracker for the relative position/velocity from noisy LOS + range. Construct once
 // per run; call update() each step. Produces nav_pos_est / nav_vel_est used by guidance.
 class Navigator {
