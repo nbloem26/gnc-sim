@@ -1,0 +1,109 @@
+{
+  "config": {
+    "aero": {
+      "cd0": 0.3,
+      "cd_mach": [
+        [
+          0.0,
+          0.28
+        ],
+        [
+          0.7,
+          0.3
+        ],
+        [
+          0.9,
+          0.42
+        ],
+        [
+          1.0,
+          0.58
+        ],
+        [
+          1.2,
+          0.52
+        ],
+        [
+          1.5,
+          0.43
+        ],
+        [
+          2.0,
+          0.36
+        ],
+        [
+          3.0,
+          0.3
+        ],
+        [
+          4.0,
+          0.27
+        ]
+      ],
+      "ref_area": 0.02
+    },
+    "dt": 0.005,
+    "env": {
+      "altitude_dependent_g": false,
+      "atmosphere": true,
+      "g0": 9.80665
+    },
+    "guidance": {
+      "law": "pronav",
+      "max_accel": 400.0,
+      "nav_constant": 4.0
+    },
+    "integrator": "rk4",
+    "model": "3dof",
+    "origin": {
+      "alt0_m": 0.0,
+      "lat0_deg": 28.4889,
+      "lon0_deg": -80.5778
+    },
+    "scenario": "homing",
+    "seed": 1,
+    "sensors": {
+      "enable": false
+    },
+    "t_end": 40.0,
+    "target": {
+      "maneuver": "constant",
+      "pos0": [
+        9000,
+        0,
+        3500
+      ],
+      "vel0": [
+        -280,
+        0,
+        -40
+      ]
+    },
+    "vehicle": {
+      "launch_azimuth_deg": 0,
+      "launch_elevation_deg": 42,
+      "launch_speed": 900,
+      "mass0": 22.0,
+      "pos0": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "dt": 0.005,
+  "git_sha": "",
+  "intercept": true,
+  "intercept_time": 14.024519842824688,
+  "miss_distance": 0.000115232999095839,
+  "model": "3dof",
+  "num_frames": 2806,
+  "origin": {
+    "alt0_m": 0.0,
+    "lat0_deg": 28.4889,
+    "lon0_deg": -80.5778
+  },
+  "scenario": "homing",
+  "seed": 1,
+  "t_end": 40.0
+}

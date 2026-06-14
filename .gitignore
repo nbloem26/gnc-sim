@@ -1,0 +1,38 @@
+# Build outputs
+/build/
+/build-native/
+/build-wasm/
+*.o
+*.a
+*.obj
+
+# Native run outputs (keep the sample)
+/runs/*
+!/runs/sample_run/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Generated IMU characterization record (large, regenerable via sensors/generate_imu_data.py)
+/sensors/imu_raw.npz
+# NOTE: postproc/figures/*.png ARE committed — the web app's validation pages display them
+# without running Python in the Vercel build.
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+
+# WASM build artifacts are committed under web/public/wasm/ on purpose
+# (so Vercel builds without Emscripten) — do NOT ignore them.
+
+# Editor / OS
+.DS_Store
+*.swp
+.cache/
+compile_commands.json

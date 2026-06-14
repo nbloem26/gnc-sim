@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  native:
+    name: Native build + C++ tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build + test (CTest)
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native -j"$(nproc)"
+          ctest --test-dir build-native --output-on-failure
+      - name: Upload native CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: gncsim-native
+          path: build-native/apps/cli/gncsim
+
+  python:
+    name: Python rigor (Allan variance + validation)
+    runs-on: ubuntu-latest
+    needs: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install deps
+        run: pip install -r postproc/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { name: gncsim-native, path: build-native/apps/cli }
+      - run: chmod +x build-native/apps/cli/gncsim
+      - name: Sensor characterization (writes configs/sensor_params.json)
+        run: python sensors/generate_imu_data.py && python sensors/fit_noise_params.py
+      - name: Post-processing + validation tests
+        run: python -m pytest postproc/tests -q
+
+  wasm-web:
+    name: WASM build + native↔WASM parity + web build
+    runs-on: ubuntu-latest
+    needs: native
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+      - uses: mymindstorm/setup-emsdk@v14
+        with: { version: '3.1.61' }
+      - name: Build WASM
+        run: ./scripts/build-wasm.sh
+      - uses: actions/download-artifact@v4
+        with: { name: gncsim-native, path: build-native/apps/cli }
+      - run: chmod +x build-native/apps/cli/gncsim
+      - name: Native ↔ WASM parity check
+        run: node scripts/parity-check.mjs configs/homing_3dof.json
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Build web app
+        run: cd web && npm ci && npm run build
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-out
+          path: web/out
