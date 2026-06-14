@@ -1,0 +1,82 @@
+{
+  "presets": [
+    {
+      "id": "homing_3dof",
+      "file": "homing_3dof.json",
+      "label": "Homing — 3DOF ProNav",
+      "description": "Baseline proportional-navigation homing engagement (point-mass 3-DOF)."
+    },
+    {
+      "id": "homing_3dof_ekf",
+      "file": "homing_3dof_ekf.json",
+      "label": "Homing — 3DOF + EKF nav",
+      "description": "Homing engagement with the EKF navigation filter active (emits nav_nis consistency channel)."
+    },
+    {
+      "id": "homing_6dof",
+      "file": "homing_6dof.json",
+      "label": "Homing — 6DOF rigid body",
+      "description": "Full 6-DOF rigid-body homing engagement with autopilot fin control."
+    },
+    {
+      "id": "homing_boost",
+      "file": "homing_boost.json",
+      "label": "Homing — boosting motor",
+      "description": "Homing engagement with a thrusting boost phase (variable mass / thrust channel)."
+    },
+    {
+      "id": "ballistic_round",
+      "file": "ballistic_round.json",
+      "label": "Ballistic — round Earth",
+      "description": "Unguided ballistic round over a WGS-84 round-Earth model (no guidance)."
+    },
+    {
+      "id": "projectile_3dof",
+      "file": "projectile_3dof.json",
+      "label": "Ballistic — flat-Earth projectile",
+      "description": "Unguided 3-DOF projectile over flat Earth with atmospheric drag."
+    },
+    {
+      "id": "track_fused",
+      "file": "track_fused.json",
+      "label": "Track — fused radar + IR",
+      "description": "Multi-sensor target-track fusion (ground radar + space IR). Populates track_* and track_nis."
+    },
+    {
+      "id": "track_radar_only",
+      "file": "track_radar_only.json",
+      "label": "Track — ground radar only",
+      "description": "Single-sensor ground-radar target track (baseline for fusion comparison)."
+    },
+    {
+      "id": "track_ir_only",
+      "file": "track_ir_only.json",
+      "label": "Track — space IR only",
+      "description": "Single-sensor space-based IR target track (baseline for fusion comparison)."
+    },
+    {
+      "id": "discrimination",
+      "file": "discrimination.json",
+      "label": "Discrimination — decoys / CSO",
+      "description": "Seeker decoy / closely-spaced-object discrimination. Populates selected_obj, discrim_correct, discrim_margin."
+    },
+    {
+      "id": "engagement_cued",
+      "file": "engagement_cued.json",
+      "label": "Engagement — launch-on-track cueing",
+      "description": "Cued launch-on-track engagement: track-confident launch then terminal homing (launch_time > 0)."
+    },
+    {
+      "id": "montecarlo",
+      "file": "montecarlo.json",
+      "label": "Monte Carlo — ProNav",
+      "description": "Dispersed Monte-Carlo homing set using ProNav guidance."
+    },
+    {
+      "id": "montecarlo_apn",
+      "file": "montecarlo_apn.json",
+      "label": "Monte Carlo — APN",
+      "description": "Dispersed Monte-Carlo homing set using augmented proportional navigation (APN)."
+    }
+  ]
+}
