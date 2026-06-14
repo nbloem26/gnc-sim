@@ -69,19 +69,19 @@ deviation, loop-closure, Monte Carlo CEP, validation summary).
 
 ---
 
-## Mapping to the GPI / Seeker–Tracking Algorithms role
+## Capabilities demonstrated
 
-| Role element | In this project |
+| Area | In this project |
 |---|---|
-| C++ GNC algorithms & simulation tools on **Linux** | `core/` + `apps/cli`, CMake, CTest |
-| **Python** (and MATLAB-ready) analysis toolchain | `sensors/`, `postproc/`, notebooks |
+| C++ GNC algorithms & simulation on **Linux** | `core/` + `apps/cli`, CMake, CTest |
+| **Python** (MATLAB-ready) analysis toolchain | `sensors/`, `postproc/`, notebooks |
 | **Statistical processing of measured data** into realistic sim inputs | Allan-variance loop → `sensor_params.json` |
-| **Seeker / tracking** | angle-tracking seeker model + alpha-beta tracker (→ Kalman, see roadmap) |
+| **Seeker / target tracking** | angle-tracking seeker model + alpha-beta tracker (→ EKF, see roadmap) |
 | **Guidance** to a target state | Proportional Navigation; PN intercept validated |
-| **Control law** design | 6-DOF acceleration autopilot |
-| **Verification & testing** across the life-cycle | analytical validation suite + parity + determinism |
-| **CI / continuous build-test-deploy** | GitHub Actions: build → test → WASM → parity → deploy |
+| **Control-law** design | 6-DOF acceleration autopilot |
+| **Verification & testing** | analytical validation suite + native↔WASM parity + determinism |
+| **Continuous build/test/deploy** | GitHub Actions: build → test → WASM → parity → deploy |
 
-The natural next steps toward a launch-engagement environment (boost-phase ICBM threat, ground +
+The next steps toward a multi-sensor launch-engagement environment (boost-phase threat, ground +
 space-based trackers, multi-sensor fusion with a Kalman filter, interceptor coordination) are laid
 out in [ROADMAP.md](ROADMAP.md) — deliberately staged on top of the repeatable core proven here.

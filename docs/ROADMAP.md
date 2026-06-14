@@ -26,7 +26,7 @@ noise, analytical validation suite, Monte Carlo CEP, CI, and an interactive 3D w
 - [ ] Round-Earth (ECEF/ECI) dynamics + WGS-84; gravity harmonics. Retire the flat-Earth assumption
       behind a frame-abstraction layer so existing tests still pin the flat-Earth limit.
 - [ ] **Boost-phase / glide threat model**: powered ICBM ascent, staging events, then a hypersonic
-      glide trajectory (the GPI engagement class).
+      glide trajectory (a hypersonic glide-vehicle engagement).
 - [ ] Atmosphere perturbations (winds, density dispersions) as Monte Carlo factors.
 
 **Guidance & control**

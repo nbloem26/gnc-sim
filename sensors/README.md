@@ -5,7 +5,7 @@
 This directory characterizes a tactical-grade MEMS IMU error model with **Allan variance**,
 recovers its noise parameters from data, feeds them into the C++ flight simulator, and then
 **proves loop-closure** — the in-sim sensor reproduces the exact noise it was given. It is a
-self-contained, deterministic, employer-facing demonstration of inertial-sensor metrology.
+self-contained, deterministic demonstration of inertial-sensor metrology.
 
 ```
 generate_imu_data.py ──▶ imu_raw.npz ──▶ allan_variance.py ──▶ allan_deviation.png

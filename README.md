@@ -13,7 +13,7 @@ the offline validation and Monte Carlo rigor.
 
 ### Engineering write-ups
 - [docs/ANSWERS.md](docs/ANSWERS.md) — the C++/Linux + Python validation story and the
-  measured-data → realistic-sim-inputs fidelity story (with results), mapped to the GNC role.
+  measured-data → realistic-sim-inputs fidelity story, with results.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — one core, two targets; the per-step GNC loop.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — staged path toward a multi-tracker launch-engagement sim.
 - [docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md) — the schema shared by C++, Python, and the web app.
