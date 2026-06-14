@@ -70,6 +70,11 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.env.altitude_dependent_g =
         get_or<bool>(e, "altitude_dependent_g", c.env.altitude_dependent_g);
     c.env.atmosphere = get_or<bool>(e, "atmosphere", c.env.atmosphere);
+    // Frame selector: tolerant — anything other than "round" falls back to the flat default so the
+    // flat-Earth regression baseline is never disturbed by a typo.
+    const std::string frame = get_or<std::string>(e, "frame", c.env.frame);
+    c.env.frame = (frame == "round") ? "round" : "flat";
+    c.env.j2 = get_or<bool>(e, "j2", c.env.j2);
   }
 
   if (j.contains("aero")) {

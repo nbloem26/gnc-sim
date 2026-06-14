@@ -18,6 +18,7 @@
 #include "gncsim/core/Rng.hpp"
 #include "gncsim/dynamics/Dynamics.hpp"
 #include "gncsim/env/Environment.hpp"
+#include "gncsim/env/Frames.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/sensors/Sensors.hpp"
@@ -60,9 +61,173 @@ Vector3 targetAccel(const TargetConfig& cfg, const EntityState& tgt, double t) {
   return perp * (cfg.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg.maneuver_freq * t + phase));
 }
 
+// =============================================================================================
+// Round-Earth propagation (cfg.env.frame == "round")
+// =============================================================================================
+//
+// Propagation frame: ECI (Earth-Centred Inertial), coincident with ECEF at t = 0 (GMST = 0). An
+// inertial integration frame means the equations of motion carry NO Coriolis/centrifugal term —
+// only true forces (central gravity + drag). Earth's rotation is applied purely as a kinematic
+// ECI->ECEF rotation when sampling the atmosphere and emitting telemetry. This keeps the existing
+// fixed-acceleration RK4 integrator (step3dof) reusable and the scope bounded.
+//
+// Frame flow each step:
+//   ECI state  --(omega*t rotation)-->  ECEF  --(about origin)-->  ENU  (telemetry + engagement)
+//   drag: computed from the airspeed relative to the co-rotating atmosphere (= ECEF velocity),
+//         built in ECEF, rotated back to ECI to integrate.
+//
+// Gravity: central point-mass -GM/r^2 * r_hat in ECI, with an optional J2 term (cfg.env.j2).
+// Guidance/sensors/EKF are intentionally out of scope here: this path targets the unguided
+// ballistic launch-engagement comparison case. Relative engagement geometry is still computed in
+// ENU (frame-agnostic) and recorded for the contract, but no guidance command is applied.
+//
+// Uses NO RNG draws (deterministic, parity-preserving).
+SimResult runRoundEarth(const SimConfig& cfg) {
+  SimResult r;
+  r.scenario = cfg.scenario;
+  r.model = cfg.model;
+  r.seed = cfg.seed;
+  r.dt = cfg.dt;
+  r.t_end = cfg.t_end;
+  r.origin = cfg.origin;
+
+  const GeodeticOrigin& origin = cfg.origin;
+  const bool with_j2 = cfg.env.j2;
+
+  // --- Initial states: ENU (about origin) -> ECEF -> ECI. ---
+  // Position: ENU point -> ECEF point -> ECI (coincident at t=0, so ECI == ECEF here).
+  const Vector3 veh_enu0 = cfg.vehicle.pos0;
+  const Vector3 veh_ecef0 = enuToEcef(veh_enu0, origin);
+  Vector3 veh_r = ecefToEci(veh_ecef0, 0.0);
+  // Velocity: ENU launch vel -> ECEF (rotation) -> ECI inertial (add Earth rotation omega x r).
+  const Vector3 veh_vel_ecef = enuVecToEcef(launchVelocity(cfg.vehicle), origin);
+  Vector3 veh_v = ecefVelToEci(veh_ecef0, veh_vel_ecef, 0.0);
+  double veh_mass = cfg.vehicle.mass0;
+
+  const Vector3 tgt_ecef0 = enuToEcef(cfg.target.pos0, origin);
+  Vector3 tgt_r = ecefToEci(tgt_ecef0, 0.0);
+  const Vector3 tgt_vel_ecef = enuVecToEcef(cfg.target.vel0, origin);
+  Vector3 tgt_v = ecefVelToEci(tgt_ecef0, tgt_vel_ecef, 0.0);
+
+  AeroModel aero(cfg.aero);
+
+  // Helper: ECI state -> ENU telemetry (position + velocity) about the origin at time t.
+  auto eciToEnuState = [&](const Vector3& r_eci, const Vector3& v_eci, double t, Vector3& pos_enu,
+                           Vector3& vel_enu) {
+    const Vector3 r_ecef = eciToEcef(r_eci, t);
+    const Vector3 v_ecef = eciVelToEcef(r_eci, v_eci, t);
+    pos_enu = ecefToEnu(r_ecef, origin);
+    vel_enu = ecefVecToEnu(v_ecef, origin);
+  };
+
+  double best_range = (tgt_r - veh_r).norm();
+  double best_t = 0.0;
+
+  const int steps = static_cast<int>(cfg.t_end / cfg.dt);
+  for (int i = 0; i <= steps; ++i) {
+    const double t = i * cfg.dt;
+
+    // --- ECEF / geodetic state for atmosphere + termination. ---
+    const Vector3 veh_ecef = eciToEcef(veh_r, t);
+    const Vector3 veh_vel_ecef_now = eciVelToEcef(veh_r, veh_v, t);
+    double lat, lon, alt;
+    ecefToGeodetic(veh_ecef, lat, lon, alt);
+
+    const AtmSample atm =
+        cfg.env.atmosphere ? atmosphereUSSA76(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    const double airspeed = veh_vel_ecef_now.norm();
+    const double mach = atm.speed_of_sound > 0.0 ? airspeed / atm.speed_of_sound : 0.0;
+
+    // --- ENU telemetry + engagement geometry (frame-agnostic relative state). ---
+    Vector3 veh_pos_enu, veh_vel_enu, tgt_pos_enu, tgt_vel_enu;
+    eciToEnuState(veh_r, veh_v, t, veh_pos_enu, veh_vel_enu);
+    eciToEnuState(tgt_r, tgt_v, t, tgt_pos_enu, tgt_vel_enu);
+
+    EntityState veh_e, tgt_e;
+    veh_e.pos = veh_pos_enu;
+    veh_e.vel = veh_vel_enu;
+    tgt_e.pos = tgt_pos_enu;
+    tgt_e.vel = tgt_vel_enu;
+    const Engagement truth = computeEngagement(veh_e, tgt_e);
+
+    // --- Record telemetry frame. ---
+    Frame f;
+    f.t = t;
+    f.veh_pos = veh_pos_enu;
+    f.veh_vel = veh_vel_enu;
+    f.mass = veh_mass;
+    f.mach = mach;
+    f.tgt_pos = tgt_pos_enu;
+    f.tgt_vel = tgt_vel_enu;
+    f.nav_pos_est = veh_pos_enu + truth.rel_pos;
+    f.nav_vel_est = veh_vel_enu + truth.rel_vel;
+    f.los_angle = truth.los_angle;
+    f.los_rate = truth.los_rate;
+    f.v_closing = truth.v_closing;
+    f.range = truth.range;
+    f.seeker_los_true = truth.los_angle;
+    f.seeker_los_meas = truth.los_angle;
+    r.frames.push_back(f);
+
+    // --- Closest approach (analytic CPA over the next dt) in ECI. ---
+    const Vector3 rel_pos = tgt_r - veh_r;
+    const Vector3 rel_vel = tgt_v - veh_v;
+    const double denom = rel_vel.normSq();
+    double s_star = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
+    if (s_star < 0.0) s_star = 0.0;
+    if (s_star > cfg.dt) s_star = cfg.dt;
+    const double cpa = (rel_pos + rel_vel * s_star).norm();
+    if (cpa < best_range) {
+      best_range = cpa;
+      best_t = t + s_star;
+    }
+
+    // --- Termination: vehicle returns to (below) the ellipsoid surface. ---
+    if (alt < 0.0 && t > 0.0) break;
+
+    // --- Forces in ECI: central gravity + drag (drag built in ECEF, rotated into ECI). ---
+    const Vector3 g_eci = centralGravity(veh_r, with_j2);
+    Vector3 drag_eci{};
+    if (cfg.env.atmosphere) {
+      const Vector3 drag_ecef = aero.dragForce(veh_vel_ecef_now, atm);
+      // Drag is a force vector in ECEF; rotate (no transport term — it's an instantaneous force).
+      drag_eci = ecefToEci(drag_ecef, t);
+    }
+    // step3dof treats `force_world` as everything except gravity; here that's drag only.
+    EntityState veh_state;
+    veh_state.pos = veh_r;
+    veh_state.vel = veh_v;
+    veh_state.mass = veh_mass;
+    const EntityState veh_next = step3dof(veh_state, drag_eci, g_eci, cfg.dt, cfg.integrator);
+    veh_r = veh_next.pos;
+    veh_v = veh_next.vel;
+
+    // --- Target: ballistic under the same central gravity (no thrust, no drag for simplicity). ---
+    const Vector3 tgt_g = centralGravity(tgt_r, with_j2);
+    EntityState tgt_state;
+    tgt_state.pos = tgt_r;
+    tgt_state.vel = tgt_v;
+    tgt_state.mass = 1.0;
+    const EntityState tgt_next = step3dof(tgt_state, Vector3{}, tgt_g, cfg.dt, cfg.integrator);
+    tgt_r = tgt_next.pos;
+    tgt_v = tgt_next.vel;
+  }
+
+  r.miss_distance = best_range;
+  r.intercept_time = best_t;
+  r.intercept = best_range < kLethalRadius;
+  return r;
+}
+
 }  // namespace
 
 SimResult runSimulation(const SimConfig& cfg) {
+  // Round-Earth opt-in: dispatch to the WGS-84 / ECI propagation path. The flat-Earth code below
+  // is never reached in round mode, so the default (flat) trajectory stays byte-identical.
+  if (cfg.env.frame == "round") {
+    return runRoundEarth(cfg);
+  }
+
   SimResult r;
   r.scenario = cfg.scenario;
   r.model = cfg.model;

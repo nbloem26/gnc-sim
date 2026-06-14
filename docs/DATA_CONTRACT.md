@@ -24,7 +24,8 @@ config is valid. Shape (defaults shown):
   "t_end": 60.0,                    // max sim time [s]
   "integrator": "rk4",             // "euler" | "rk2" | "rk4"
   "origin": { "lat0_deg": 28.4889, "lon0_deg": -80.5778, "alt0_m": 0.0 },
-  "env":   { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": true },
+  "env":   { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": true,
+             "frame": "flat", "j2": false },   // frame: "flat" (default) | "round" (WGS-84/ECI)
   "aero":  { "ref_area": 0.05, "cd0": 0.3,
              "cd_mach": [[0.0,0.28],[0.8,0.30],[1.0,0.55],[1.2,0.48],[2.0,0.34],[4.0,0.27]],
              "cn_alpha": 12.0 },
@@ -139,3 +140,15 @@ Run metadata + an echo of the input config:
 
 The C++ core stays in local ENU metres. The web app (`web/lib/enuToGeodetic.ts`) projects ENU to
 lat/lon about `origin` (local tangent plane) purely for the Leaflet ground track. No geodesy in C++.
+
+### Round-Earth mode (`env.frame == "round"`)
+
+Opt-in via `env.frame: "round"` (default `"flat"`). In round mode the translational state is
+propagated in **ECI** (Earth-Centred Inertial; coincident with ECEF at t=0, GMST=0), under WGS-84
+central point-mass gravity (`-GM/r²·r̂`) plus an optional J2 oblateness term (`env.j2`). Earth's
+rotation enters only kinematically (ECI→ECEF rotation by ω·t) when sampling the atmosphere and
+emitting output. All telemetry (CSV/JSON `veh_*`/`tgt_*`) is still converted back to **local ENU
+about `origin`**, so the data contract, engagement geometry, and the web map are unchanged. The
+geodesy lives in `core/src/env/Frames.cpp` (only reached in round mode); the flat-Earth path is
+byte-identical to before. Round mode targets the unguided ballistic launch-engagement case — no
+guidance/sensors/EKF are applied on this path.
