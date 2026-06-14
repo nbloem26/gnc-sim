@@ -19,6 +19,7 @@
 #include "gncsim/dynamics/Dynamics.hpp"
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/env/Frames.hpp"
+#include "gncsim/gnc/Discriminator.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/gnc/TargetTrackEkf.hpp"
@@ -98,6 +99,71 @@ std::vector<double> synthSensorMeasurement(const TrackSensor& s, const Vector3& 
   double range_rate =
       (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s.sigma_range_rate);
   return {az, el, range, range_rate};
+}
+
+// =============================================================================================
+// Decoy / closely-spaced-object scene (cfg.decoys.enabled — issue #6)
+// =============================================================================================
+//
+// One object in the multi-object scene. Index 0 is, by convention, the true (lethal) target; its
+// truth state mirrors the existing single `tgt`. Decoys are placed in a small cluster around the
+// true target and propagate ballistically with an EXTRA along-velocity deceleration set by their
+// `decel` feature (lighter decoy -> lower ballistic coefficient -> sheds speed faster). Each object
+// also carries a static 3-feature signature [intensity, size, decel] the seeker measures noisily.
+struct SceneObject {
+  EntityState state;     // truth position/velocity (ENU)
+  FeatureVec signature;  // static [intensity, size, decel]
+  double decel_accel;    // extra deceleration magnitude [m/s^2] applied opposite velocity
+};
+
+// Build the decoy scene from the config and the true target's initial state. Index 0 is the true
+// target (signature = the configured lethal-target signature, no extra decel). Decoys are scattered
+// in a Gaussian cluster of std `separation` about the true target with feature signatures drawn
+// from distributions whose MEAN is blended between the distinct decoy means (separability=1) and
+// the target signature (separability=0). Draws RNG only here (decoy path is opt-in, so the default
+// RNG draw order is untouched).
+std::vector<SceneObject> buildDecoyScene(const DecoysConfig& cfg, const EntityState& tgt,
+                                         Rng& rng) {
+  std::vector<SceneObject> objs;
+  const int n = std::max(cfg.count, 0);
+  objs.reserve(static_cast<std::size_t>(n) + 1);
+
+  // Index 0: the true lethal target. Its measured signature is its expected signature plus a static
+  // per-object draw (aspect/manufacturing variation): the seeker does NOT see the warhead sitting
+  // exactly on the textbook signature, so at low separability a decoy's draw can out-score it. This
+  // is what makes discrimination genuinely fail as the distributions overlap.
+  SceneObject truth_obj;
+  truth_obj.state = tgt;
+  const double ti = cfg.target_intensity + rng.gaussian(0.0, cfg.feature_spread);
+  const double ts = cfg.target_size + rng.gaussian(0.0, cfg.feature_spread);
+  const double td = cfg.target_decel + rng.gaussian(0.0, cfg.feature_spread);
+  truth_obj.signature = {ti, ts, td};
+  // The kinematic feature drives the heavy warhead's (small) extra deceleration baseline.
+  truth_obj.decel_accel = std::max(td, 0.0);
+  objs.push_back(truth_obj);
+
+  const double sep = std::clamp(cfg.separability, 0.0, 1.0);
+  // Decoy feature means blended toward the target signature as separability -> 0.
+  const double mu_int = cfg.decoy_intensity * sep + cfg.target_intensity * (1.0 - sep);
+  const double mu_size = cfg.decoy_size * sep + cfg.target_size * (1.0 - sep);
+  const double mu_decel = cfg.decoy_decel * sep + cfg.target_decel * (1.0 - sep);
+
+  for (int i = 0; i < n; ++i) {
+    SceneObject d;
+    d.state = tgt;
+    // Cluster placement: Gaussian offset about the true target (position + a small velocity
+    // spread).
+    d.state.pos = tgt.pos + rng.gaussianVec(cfg.separation);
+    d.state.vel = tgt.vel + rng.gaussianVec(cfg.separation * 0.02);
+    // Static feature signature: per-object draw about the (separability-blended) decoy means.
+    const double fi = mu_int + rng.gaussian(0.0, cfg.feature_spread);
+    const double fs = mu_size + rng.gaussian(0.0, cfg.feature_spread);
+    const double fd = mu_decel + rng.gaussian(0.0, cfg.feature_spread);
+    d.signature = {fi, fs, fd};
+    d.decel_accel = std::max(fd, 0.0);  // the kinematic feature drives the extra deceleration
+    objs.push_back(d);
+  }
+  return objs;
 }
 
 // =============================================================================================
@@ -325,6 +391,20 @@ SimResult runSimulation(const SimConfig& cfg) {
     track_ekf.bootstrap(tgt.pos, tgt.vel);
   }
 
+  // --- Decoy / closely-spaced-object discrimination (issue #6): opt-in ---
+  // When enabled, build a multi-object scene (true target at index 0 + N decoys) and a
+  // feature-based discriminator. Each step the seeker measures every object's features (noisily),
+  // the discriminator selects the most target-like object, and guidance homes on the SELECTED
+  // object's position instead of the true target. CPA / miss is always scored against the true
+  // target, so a wrong selection produces a large miss. The default path (decoys disabled) never
+  // enters any code below, so its RNG draw order and trajectory stay byte-identical.
+  const bool use_decoys = cfg.decoys.enabled && cfg.decoys.count > 0;
+  std::vector<SceneObject> scene =
+      use_decoys ? buildDecoyScene(cfg.decoys, tgt, rng) : std::vector<SceneObject>{};
+  const int kTargetIndex = 0;  // index of the true target within the scene
+  Discriminator discriminator(cfg.decoys, use_decoys ? static_cast<int>(scene.size()) : 1,
+                              kTargetIndex);
+
   double best_range = (tgt.pos - veh.pos).norm();
   double best_t = 0.0;
   Vector3
@@ -370,11 +450,38 @@ SimResult runSimulation(const SimConfig& cfg) {
     const double mach = atm.speed_of_sound > 0.0 ? speed / atm.speed_of_sound : 0.0;
     veh.mach = mach;
 
-    // --- Truth engagement geometry ---
+    // --- Truth engagement geometry (against the true target) ---
     const Engagement truth = computeEngagement(veh, tgt);
 
+    // --- Decoy discrimination: pick which object guidance homes on (issue #6) ---
+    // `aim` is the object the guidance estimate chases. Default (no decoys) == the true target, so
+    // the engagement below is unchanged. With decoys, the seeker measures every object's features
+    // noisily (RNG drawn only here), the discriminator integrates scores and selects the most
+    // target-like object, and `aim` becomes that selected object's truth state.
+    EntityState aim = tgt;
+    int selected_obj = kTargetIndex;
+    bool discrim_correct = true;
+    double discrim_margin = 0.0;
+    if (use_decoys) {
+      std::vector<FeatureVec> z;
+      z.reserve(scene.size());
+      for (const auto& obj : scene) {
+        z.push_back({obj.signature[0] + rng.gaussian(0.0, cfg.decoys.measurement_noise),
+                     obj.signature[1] + rng.gaussian(0.0, cfg.decoys.measurement_noise),
+                     obj.signature[2] + rng.gaussian(0.0, cfg.decoys.measurement_noise)});
+      }
+      discriminator.observe(z);
+      selected_obj = discriminator.selected();
+      discrim_correct = discriminator.correct();
+      discrim_margin = discriminator.margin();
+      aim = scene[static_cast<std::size_t>(selected_obj)].state;
+    }
+
     // --- Navigation: estimate the relative state (noisy seeker when sensors enabled) ---
-    Engagement est = truth;
+    // Guidance chases `aim` (== the true target on the default path; the selected object with
+    // decoys). The closest-approach / miss bookkeeping below always uses the true-target `truth`.
+    const Engagement aim_truth = use_decoys ? computeEngagement(veh, aim) : truth;
+    Engagement est = aim_truth;
     double seeker_los_meas = truth.los_angle;
     double nav_nis = 0.0;
     Vector3 track_pos_est;  // fused absolute target-position estimate (issue #5); 0 when disabled
@@ -548,6 +655,9 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.nav_nis = nav_nis;
     f.track_pos_est = track_pos_est;
     f.track_nis = track_nis;
+    f.selected_obj = static_cast<double>(selected_obj);
+    f.discrim_correct = discrim_correct ? 1.0 : 0.0;
+    f.discrim_margin = discrim_margin;
     f.imu_accel_true = specific_force;
     f.imu_accel_meas = imu_accel_meas;
     f.imu_gyro_true = veh.angVel;
@@ -577,6 +687,25 @@ SimResult runSimulation(const SimConfig& cfg) {
     const Vector3 ta = targetAccel(cfg.target, tgt, t);
     tgt.vel += ta * cfg.dt;
     tgt.pos += tgt.vel * cfg.dt;
+
+    // --- Propagate the decoy scene (issue #6) ---
+    // Index 0 mirrors the true target. Decoys fly ballistically (gravity, no maneuver) with an
+    // extra along-velocity deceleration set by their kinematic feature: a light decoy sheds speed
+    // faster than the heavy warhead, which is itself a discriminable kinematic cue. No RNG drawn
+    // here.
+    if (use_decoys) {
+      scene[static_cast<std::size_t>(kTargetIndex)].state = tgt;
+      const Vector3 g_obj = gravity.acceleration(tgt.pos);
+      for (std::size_t oi = 0; oi < scene.size(); ++oi) {
+        if (static_cast<int>(oi) == kTargetIndex) continue;
+        EntityState& s = scene[oi].state;
+        Vector3 a = g_obj;
+        const double spd = s.vel.norm();
+        if (spd > 1e-9) a -= s.vel * (scene[oi].decel_accel / spd);  // deceleration along -velocity
+        s.vel += a * cfg.dt;
+        s.pos += s.vel * cfg.dt;
+      }
+    }
 
     const Vector3 g = gravity.acceleration(veh.pos);
     veh = is6dof ? step6dof(veh, force_world, moment_body, cfg.vehicle.inertia, g, cfg.dt,
