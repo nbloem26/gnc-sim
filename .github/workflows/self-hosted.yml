@@ -1,0 +1,65 @@
+name: Self-hosted CI (heavy)
+
+# Runs on OUR hardware via a self-hosted runner. Opt-in and fork-safe:
+#  - NO `pull_request` trigger, so untrusted fork-PR code never executes on the self-hosted box.
+#  - `workflow_dispatch` (manual) + push to `main` only.
+#  - Job-level guard so repo *forks* that copy this file don't try to use a runner that isn't theirs.
+# The github-hosted ci.yml remains the gate for pull requests.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: self-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  heavy:
+    name: Full pipeline + large Monte Carlo
+    if: github.repository == 'nbloem26/gnc-sim'
+    runs-on: [self-hosted, linux, gnc-sim]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain versions
+        run: |
+          cmake --version | head -1
+          python3 --version
+          node --version
+
+      - name: Native build + CTest
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native -j"$(nproc)"
+          ctest --test-dir build-native --output-on-failure
+
+      - name: WASM build (Emscripten)
+        run: |
+          # The provisioning script installs emsdk; source it if not already on PATH.
+          if ! command -v emcmake >/dev/null 2>&1; then
+            for env in "$EMSDK/emsdk_env.sh" "$HOME/emsdk/emsdk_env.sh" "/opt/emsdk/emsdk_env.sh"; do
+              [ -f "$env" ] && . "$env" && break
+            done
+          fi
+          ./scripts/build-wasm.sh
+
+      - name: Native ↔ WASM parity
+        run: node scripts/parity-check.mjs configs/homing_3dof.json
+
+      - name: Python rigor
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install -q -r postproc/requirements.txt
+          python sensors/generate_imu_data.py && python sensors/fit_noise_params.py
+          python -m pytest postproc/tests -q
+
+      - name: Large Monte Carlo campaign
+        run: ./build-native/apps/cli/gncsim --config configs/montecarlo_heavy.json --out runs/mc_heavy
+
+      - name: Upload Monte Carlo summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: monte-carlo-heavy
+          path: runs/mc_heavy/summary.csv

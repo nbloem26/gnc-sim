@@ -1,0 +1,32 @@
+{
+  "scenario": "homing_mc_heavy",
+  "model": "3dof",
+  "seed": 20260614,
+  "dt": 0.005,
+  "t_end": 40.0,
+  "integrator": "rk4",
+  "env": { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": true },
+  "aero": {
+    "ref_area": 0.02,
+    "cd_mach": [[0.0,0.28],[0.7,0.30],[0.9,0.42],[1.0,0.58],[1.2,0.52],[1.5,0.43],[2.0,0.36],[3.0,0.30],[4.0,0.27]]
+  },
+  "vehicle": { "pos0": [0,0,0], "launch_speed": 900, "launch_elevation_deg": 42, "launch_azimuth_deg": 0, "mass0": 22.0 },
+  "guidance": { "law": "pronav", "nav_constant": 4.0, "max_accel": 300.0, "time_constant": 0.2 },
+  "sensors": {
+    "enable": true,
+    "imu": {
+      "accel_white": 8.0e-4, "accel_bias_instability": 5.0e-4, "accel_bias_tau": 100.0,
+      "accel_rrw": 1.0e-5, "accel_scale_factor": 1.0e-3,
+      "gyro_white": 9.0e-5, "gyro_bias_instability": 1.5e-5, "gyro_bias_tau": 100.0,
+      "gyro_rrw": 2.0e-7, "gyro_scale_factor": 5.0e-4
+    },
+    "seeker": { "los_white": 3.0e-3, "los_bias": 5.0e-4, "glint": 2.0 }
+  },
+  "target": { "pos0": [9000,0,3500], "vel0": [-280,0,-40], "maneuver": "weave", "maneuver_g": 4.0, "maneuver_freq": 0.4 },
+  "monte_carlo": {
+    "num_cases": 5000,
+    "launch_speed_sigma": 15.0,
+    "launch_elevation_sigma_deg": 0.5,
+    "target_pos_sigma": 50.0
+  }
+}
