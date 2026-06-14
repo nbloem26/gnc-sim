@@ -1,11 +1,21 @@
 'use client';
 
 /**
- * Monte Carlo panel: runs N (<=200) client-side WASM runs varying the seed and
- * plots the miss-distance scatter + histogram with an empirical CEP circle.
+ * Monte Carlo panel: runs N (<=200) client-side WASM runs, each with dispersed
+ * initial conditions, and plots the miss-distance scatter + histogram with an
+ * empirical CEP circle.
  *
- * In MOCK mode (no WASM artifact) live MC is meaningless (every seed returns the
- * same sample), so we disable the run and show the committed montecarlo_cep.png.
+ * IC dispersion mirrors the C++ driver (core/src/scenario/MonteCarlo.cpp): per
+ * case we draw Gaussian perturbations on launch speed, launch elevation, and the
+ * target's initial position (x/y/z), and randomize the weave maneuver phase, then
+ * bump the seed so the core's sensor-noise stream also varies. Without this the
+ * default scenario (sensors_enable may be off, and even on the seed only drives
+ * noise) collapses to N identical runs. A seeded PRNG (lib/prng.ts) makes the web
+ * batch reproducible from the master seed.
+ *
+ * In MOCK mode (no WASM artifact) live MC is meaningless (every run returns the
+ * same committed sample regardless of config), so we disable the run and show the
+ * committed montecarlo_cep.png.
  */
 
 import { useMemo, useState } from 'react';
@@ -13,6 +23,7 @@ import type { Data } from 'plotly.js-dist-min';
 import type { SimConfig, SimResult } from '@/lib/types';
 import { runSim, isMockMode } from '@/lib/wasmRunner';
 import { cep, mean } from '@/lib/stats';
+import { Prng } from '@/lib/prng';
 import Plot from './Plot';
 
 interface MCResult {
@@ -25,6 +36,53 @@ interface MCResult {
 
 const MAX_CASES = 200;
 const CEP_FIGURE = '/figures/montecarlo_cep.png';
+
+// 1-sigma IC dispersions. Defaults match the C++ driver's monte_carlo sigma block
+// (configs/montecarlo.json): launch speed 15 m/s, launch elevation 0.5 deg, target
+// position 50 m. Overridden by baseConfig.monte_carlo when the loaded scenario
+// carries it, then editable in the panel.
+const DEFAULT_LAUNCH_SPEED_SIGMA_MPS = 15.0;
+const DEFAULT_LAUNCH_ELEVATION_SIGMA_DEG = 0.5;
+const DEFAULT_TARGET_POS_SIGMA_M = 50.0;
+
+interface Dispersion {
+  launchSpeedSigmaMps: number;
+  launchElevationSigmaDeg: number;
+  targetPosSigmaM: number;
+}
+
+/** Apply one case's Gaussian IC perturbations + per-case seed, mirroring the C++ driver. */
+function disperseConfig(base: SimConfig, rng: Prng, d: Dispersion): SimConfig {
+  // Independent per-case seed: drives the core's bit-identical sensor-noise stream.
+  const seed = rng.nextUint32();
+
+  const launchSpeed = base.vehicle.launch_speed + rng.gaussian(0, d.launchSpeedSigmaMps);
+  const launchElevationDeg =
+    base.vehicle.launch_elevation_deg + rng.gaussian(0, d.launchElevationSigmaDeg);
+  const [tx, ty, tz] = base.target.pos0;
+  const targetPos0: [number, number, number] = [
+    tx + rng.gaussian(0, d.targetPosSigmaM),
+    ty + rng.gaussian(0, d.targetPosSigmaM),
+    tz + rng.gaussian(0, d.targetPosSigmaM),
+  ];
+
+  const target: SimConfig['target'] = { ...base.target, pos0: targetPos0 };
+  // A weaving target is caught at a random point in its maneuver cycle each run.
+  if (base.target.maneuver === 'weave') {
+    target.maneuver_phase_deg = rng.uniform(0, 360);
+  }
+
+  return {
+    ...base,
+    seed,
+    vehicle: {
+      ...base.vehicle,
+      launch_speed: launchSpeed,
+      launch_elevation_deg: launchElevationDeg,
+    },
+    target,
+  };
+}
 
 export default function MonteCarloPanel({
   baseConfig,
@@ -39,6 +97,20 @@ export default function MonteCarloPanel({
   const [results, setResults] = useState<MCResult[]>([]);
   const [figureOk, setFigureOk] = useState(true);
 
+  // Seed the editable dispersions from baseConfig.monte_carlo when present, else
+  // from the C++ defaults. (One-time init: the user edits them in the panel.)
+  const [launchSpeedSigmaMps, setLaunchSpeedSigmaMps] = useState(
+    baseConfig?.monte_carlo?.launch_speed_sigma ?? DEFAULT_LAUNCH_SPEED_SIGMA_MPS,
+  );
+  const [launchElevationSigmaDeg, setLaunchElevationSigmaDeg] = useState(
+    baseConfig?.monte_carlo?.launch_elevation_sigma_deg ?? DEFAULT_LAUNCH_ELEVATION_SIGMA_DEG,
+  );
+  const [targetPosSigmaM, setTargetPosSigmaM] = useState(
+    baseConfig?.monte_carlo?.target_pos_sigma ?? DEFAULT_TARGET_POS_SIGMA_M,
+  );
+
+  const isWeave = baseConfig?.target.maneuver === 'weave';
+
   async function runBatch() {
     if (!baseConfig) return;
     const n = Math.max(1, Math.min(MAX_CASES, Math.floor(numCases)));
@@ -46,9 +118,16 @@ export default function MonteCarloPanel({
     setProgress(0);
     setResults([]);
     const out: MCResult[] = [];
+    // Master PRNG seeded from the scenario seed -> reproducible web batch.
+    const master = new Prng(baseConfig.seed ?? 1);
+    const dispersion: Dispersion = {
+      launchSpeedSigmaMps,
+      launchElevationSigmaDeg,
+      targetPosSigmaM,
+    };
     for (let i = 0; i < n; i++) {
-      const seed = (baseConfig.seed ?? 1) + i;
-      const cfg: SimConfig = { ...baseConfig, seed };
+      const cfg: SimConfig = disperseConfig(baseConfig, master, dispersion);
+      const { seed } = cfg;
       try {
         const r: SimResult = await runSim(cfg);
         const last = r.series.t.length - 1;
@@ -169,6 +248,49 @@ export default function MonteCarloPanel({
           {running ? `Running ${progress}/${numCases}…` : 'Run batch'}
         </button>
       </div>
+
+      <fieldset className="mcDispersion" disabled={running}>
+        <legend>Initial-condition dispersion (1σ)</legend>
+        <div className="mcControls">
+          <label className="field inline">
+            <span>Launch speed [m/s]</span>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={launchSpeedSigmaMps}
+              onChange={(e) => setLaunchSpeedSigmaMps(Number(e.target.value))}
+            />
+          </label>
+          <label className="field inline">
+            <span>Launch elevation [deg]</span>
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={launchElevationSigmaDeg}
+              onChange={(e) => setLaunchElevationSigmaDeg(Number(e.target.value))}
+            />
+          </label>
+          <label className="field inline">
+            <span>Target position x/y/z [m]</span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={targetPosSigmaM}
+              onChange={(e) => setTargetPosSigmaM(Number(e.target.value))}
+            />
+          </label>
+        </div>
+        <p className="muted" style={{ margin: '4px 0 0' }}>
+          Each case perturbs launch speed (σ {launchSpeedSigmaMps} m/s), launch elevation (σ{' '}
+          {launchElevationSigmaDeg}°) and target position (σ {targetPosSigmaM} m), bumps the seed
+          for sensor noise
+          {isWeave ? ', and randomizes the weave maneuver phase ∈ [0,360°)' : ''}. Mirrors{' '}
+          core/src/scenario/MonteCarlo.cpp; reproducible from the scenario seed.
+        </p>
+      </fieldset>
 
       {running ? (
         <div className="progress">
