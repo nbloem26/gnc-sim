@@ -98,6 +98,18 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.vehicle.inertia = get_or<double>(v, "inertia", c.vehicle.inertia);
   }
 
+  if (j.contains("propulsion")) {
+    const auto& p = j["propulsion"];
+    c.propulsion.thrust = get_or<double>(p, "thrust", c.propulsion.thrust);
+    c.propulsion.burn_time = get_or<double>(p, "burn_time", c.propulsion.burn_time);
+    c.propulsion.propellant_mass =
+        get_or<double>(p, "propellant_mass", c.propulsion.propellant_mass);
+    c.propulsion.boost_ref_area = get_or<double>(p, "boost_ref_area", c.propulsion.boost_ref_area);
+    c.propulsion.stage_time = get_or<double>(p, "stage_time", c.propulsion.stage_time);
+    c.propulsion.stage_mass_drop =
+        get_or<double>(p, "stage_mass_drop", c.propulsion.stage_mass_drop);
+  }
+
   if (j.contains("guidance")) {
     const auto& g = j["guidance"];
     c.guidance.law = get_or<std::string>(g, "law", c.guidance.law);

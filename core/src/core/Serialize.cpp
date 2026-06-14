@@ -23,7 +23,7 @@ json seriesObject(const SimResult& r) {
   std::vector<double> vx = col(), vy = col(), vz = col();
   std::vector<double> vvx = col(), vvy = col(), vvz = col();
   std::vector<double> roll = col(), pitch = col(), yaw = col();
-  std::vector<double> mass = col(), mach = col();
+  std::vector<double> mass = col(), mach = col(), thrust = col();
   std::vector<double> tx = col(), ty = col(), tz = col();
   std::vector<double> tvx = col(), tvy = col(), tvz = col();
   std::vector<double> acx = col(), acy = col(), acz = col();
@@ -48,6 +48,7 @@ json seriesObject(const SimResult& r) {
     yaw.push_back(e.z);
     mass.push_back(f.mass);
     mach.push_back(f.mach);
+    thrust.push_back(f.thrust);
     tx.push_back(f.tgt_pos.x);
     ty.push_back(f.tgt_pos.y);
     tz.push_back(f.tgt_pos.z);
@@ -86,6 +87,7 @@ json seriesObject(const SimResult& r) {
   s["yaw"] = yaw;
   s["mass"] = mass;
   s["mach"] = mach;
+  s["thrust"] = thrust;
   s["tgt_x"] = tx;
   s["tgt_y"] = ty;
   s["tgt_z"] = tz;
@@ -158,7 +160,7 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
   fmt(gnc);
   fmt(sens);
 
-  veh << "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach\n";
+  veh << "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach,thrust\n";
   tgt << "t,x,y,z,vx,vy,vz\n";
   gnc << "t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,"
          "range,nav_x,nav_y,nav_z,nav_nis\n";
@@ -169,7 +171,7 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
     const Vector3 e = f.veh_att.toEuler();
     veh << f.t << ',' << f.veh_pos.x << ',' << f.veh_pos.y << ',' << f.veh_pos.z << ','
         << f.veh_vel.x << ',' << f.veh_vel.y << ',' << f.veh_vel.z << ',' << e.x << ',' << e.y
-        << ',' << e.z << ',' << f.mass << ',' << f.mach << '\n';
+        << ',' << e.z << ',' << f.mass << ',' << f.mach << ',' << f.thrust << '\n';
     tgt << f.t << ',' << f.tgt_pos.x << ',' << f.tgt_pos.y << ',' << f.tgt_pos.z << ','
         << f.tgt_vel.x << ',' << f.tgt_vel.y << ',' << f.tgt_vel.z << '\n';
     gnc << f.t << ',' << f.accel_cmd.x << ',' << f.accel_cmd.y << ',' << f.accel_cmd.z << ','
