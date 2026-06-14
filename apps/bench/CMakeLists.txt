@@ -7,7 +7,11 @@ target_link_libraries(gncsim-bench PRIVATE gncsim_core)
 # small iter count for a quick smoke-level check; the budget headroom (configs/perf_budget.json)
 # absorbs slow CI hardware. Only registered when the test suite is being built so a CLI-only build
 # stays test-free.
-if(GNCSIM_BUILD_TESTS AND NOT EMSCRIPTEN)
+# Only gate on timing in an optimized, NON-instrumented build — under coverage (gcov) or
+# sanitizers the per-step cost is far higher than the budget and timing is meaningless, so the
+# gate would false-fail those jobs. The standalone CI `perf-budget` job runs an explicit Release build.
+if(GNCSIM_BUILD_TESTS AND NOT EMSCRIPTEN AND CMAKE_BUILD_TYPE STREQUAL "Release"
+   AND NOT GNCSIM_COVERAGE AND NOT GNCSIM_SANITIZE)
   enable_testing()
   add_test(
     NAME perf_budget_homing_3dof
