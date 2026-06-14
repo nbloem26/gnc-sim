@@ -11,6 +11,7 @@
 // Pure: no file I/O, so native and WASM produce identical results.
 #include "gncsim/scenario/Runner.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "gncsim/aero/Aero.hpp"
@@ -83,6 +84,11 @@ SimResult runSimulation(const SimConfig& cfg) {
   // --- Modules ---
   GravityModel gravity(cfg.env);
   AeroModel aero(cfg.aero);
+  // Booster aero: same model on a copy of the aero config with the larger boost reference area,
+  // selected only inside the boost window. Built unconditionally; only used when boost_ref_area>0.
+  AeroConfig boost_aero_cfg = cfg.aero;
+  boost_aero_cfg.ref_area = cfg.propulsion.boost_ref_area;
+  AeroModel boost_aero(boost_aero_cfg);
   Imu imu(cfg.sensors.imu, cfg.dt, rng);
   Seeker seeker(cfg.sensors.seeker, rng);
   Navigator nav(cfg.dt);
@@ -101,9 +107,27 @@ SimResult runSimulation(const SimConfig& cfg) {
   Vector3
       accel_achieved;  // realized guidance accel, lagged toward the command (finite autopilot τ)
 
+  // --- Boost phase bookkeeping (default off: thrust==0 => everything below is a no-op) ---
+  const auto& prop = cfg.propulsion;
+  // Linear propellant burn rate [kg/s].
+  const double m_dot = (prop.burn_time > 0.0 && prop.propellant_mass > 0.0)
+                           ? prop.propellant_mass / prop.burn_time
+                           : 0.0;
+  // Dry-mass floor so mass never drops to/through zero from burning propellant.
+  const double dry_mass_floor = std::max(cfg.vehicle.mass0 - prop.propellant_mass, 1e-6);
+  // Booster drag applies for t < stage_time, or t < burn_time when no staging is configured.
+  const double boost_drag_end = (prop.stage_time > 0.0) ? prop.stage_time : prop.burn_time;
+  bool staged = false;  // ensures the staging mass drop happens exactly once
+
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
   for (int i = 0; i <= steps; ++i) {
     const double t = i * cfg.dt;
+
+    // --- Staging: drop the spent booster mass exactly once at t >= stage_time ---
+    if (!staged && prop.stage_time > 0.0 && t >= prop.stage_time) {
+      veh.mass = std::max(veh.mass - prop.stage_mass_drop, 1e-6);
+      staged = true;
+    }
 
     // --- Environment / aero state ---
     const AtmSample atm =
@@ -178,20 +202,35 @@ SimResult runSimulation(const SimConfig& cfg) {
       accel_achieved = accel_cmd;
     }
 
+    // --- Boost: thrust along the velocity/nose, propellant burn (default off when thrust==0) ---
+    const bool boosting = prop.thrust > 0.0 && t < prop.burn_time;
+    const double thrust_mag = boosting ? prop.thrust : 0.0;
+    // Booster drag uses the larger reference area while inside the boost window.
+    const bool use_boost_drag = prop.boost_ref_area > 0.0 && t < boost_drag_end;
+    const AeroModel& active_aero = use_boost_drag ? boost_aero : aero;
+
     // --- Forces / moments ---
     Vector3 force_world;
     Vector3 moment_body;
     Vector3 fin_deflection;
     Vector3 specific_force;  // non-gravitational accel, for the IMU
     if (is6dof) {
-      force_world = aero.force6dof(veh.vel, veh.att, atm);
+      force_world = active_aero.force6dof(veh.vel, veh.att, atm);
+      // Thrust acts along the body nose (body x-axis rotated into the world frame).
+      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag;
+      force_world += thrust_force;
       moment_body = autopilot.moment(veh, accel_achieved, fin_deflection);
       specific_force = force_world / veh.mass;
     } else {
       // 3DOF point-mass: autopilot realizes the (lagged) PN command as lateral accel.
-      const Vector3 drag = aero.dragForce(veh.vel, atm);
-      force_world = drag + accel_achieved * veh.mass;
-      specific_force = drag / veh.mass + accel_achieved;
+      const Vector3 drag = active_aero.dragForce(veh.vel, atm);
+      // Thrust acts along the velocity direction; if (near-)stationary, along +x to get moving.
+      const double speed_for_thrust = veh.vel.norm();
+      const Vector3 thrust_dir =
+          (speed_for_thrust > 1e-9) ? veh.vel / speed_for_thrust : Vector3{1.0, 0.0, 0.0};
+      const Vector3 thrust_force = thrust_dir * thrust_mag;
+      force_world = drag + thrust_force + accel_achieved * veh.mass;
+      specific_force = (drag + thrust_force) / veh.mass + accel_achieved;
     }
 
     // --- Sensors (telemetry; gyro truth = body rate) ---
@@ -208,6 +247,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.veh_att = veh.att;
     f.mass = veh.mass;
     f.mach = mach;
+    f.thrust = thrust_mag;
     f.tgt_pos = tgt.pos;
     f.tgt_vel = tgt.vel;
     f.accel_cmd = accel_cmd;
@@ -258,6 +298,12 @@ SimResult runSimulation(const SimConfig& cfg) {
     veh = is6dof ? step6dof(veh, force_world, moment_body, cfg.vehicle.inertia, g, cfg.dt,
                             cfg.integrator)
                  : step3dof(veh, force_world, g, cfg.dt, cfg.integrator);
+
+    // Burn propellant down to the dry-mass floor while thrusting (after the step uses this
+    // step's mass for accel, so force_world and accel stay mass-consistent within the step).
+    if (boosting && m_dot > 0.0) {
+      veh.mass = std::max(veh.mass - m_dot * cfg.dt, dry_mass_floor);
+    }
   }
 
   r.miss_distance = best_range;

@@ -12,7 +12,7 @@ from gncpost.loaders import load_run, load_summary, run_cli
 def _write_fake_run(tmp_path):
     """Build a minimal valid run folder."""
     for name, cols in (
-        ("vehicle.csv", "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach"),
+        ("vehicle.csv", "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach,thrust"),
         ("target.csv", "t,x,y,z,vx,vy,vz"),
         (
             "gnc.csv",

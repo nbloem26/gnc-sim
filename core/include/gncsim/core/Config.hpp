@@ -37,6 +37,15 @@ struct VehicleConfig {
   double inertia = 1.2;                // scalar moment of inertia proxy [kg*m^2] (6DOF)
 };
 
+struct PropulsionConfig {
+  double thrust = 0.0;           // boost thrust [N] (0 = unpowered default)
+  double burn_time = 0.0;        // [s]
+  double propellant_mass = 0.0;  // [kg], burns linearly over burn_time
+  double boost_ref_area = 0.0;   // booster drag area during boost [m^2] (0 = use aero.ref_area)
+  double stage_time = 0.0;       // booster jettison time [s] (0 = no staging)
+  double stage_mass_drop = 0.0;  // mass dropped at staging [kg]
+};
+
 struct GuidanceConfig {
   std::string law = "pronav";  // "pronav" | "none"
   double nav_constant = 3.0;   // PN gain N
@@ -109,6 +118,7 @@ struct SimConfig {
   EnvConfig env;
   AeroConfig aero;
   VehicleConfig vehicle;
+  PropulsionConfig propulsion;
   GuidanceConfig guidance;
   ControlConfig control;
   SensorConfig sensors;
