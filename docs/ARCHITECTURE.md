@@ -58,6 +58,25 @@ is independent of step size rather than quantized by `dt·V_c`.
 | `core/.../gnc` | `computeEngagement`, `proNavCommand`, `Navigator`, `Autopilot` | |
 | `core/.../scenario` | `runSimulation`, `runMonteCarlo` | the loop |
 
+## Terminal conditions (issue #26)
+
+A run integrates a fixed-step loop and ends on the **first** of:
+
+1. **Time limit** — `steps = t_end / dt`; the loop stops at `t_end`.
+2. **Ground impact** — the interceptor returns below the surface (`alt < 0`); on the round-Earth
+   path that surface is the WGS-84 ellipsoid.
+
+Intercept is **not** an early stop. The miss is the **analytic closest point of approach (CPA)**,
+interpolated within each step and tracked across the whole flight; `intercept = best_range <
+kLethalRadius` (3 m). The threat is propagated independently and is not separately terminated.
+
+**Decision — no post-CPA early-out (for now).** The sim deliberately runs to `t_end` / ground impact
+rather than stopping once CPA is passed, so full-trajectory telemetry and bit-identical
+golden/determinism guarantees are preserved. A config-gated early-out (stop after the closing velocity
+flips sign post-CPA) is a possible future optimization if per-step cost becomes a constraint (see the
+performance issue #53) — but it must stay **opt-in** so default trajectories and golden baselines never
+change.
+
 ## Testing & CI
 
 - **C++**: GoogleTest via CTest — one suite per module + an integration/determinism suite (7 total).
