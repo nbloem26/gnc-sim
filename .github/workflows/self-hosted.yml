@@ -20,13 +20,26 @@ jobs:
     if: github.repository == 'nbloem26/gnc-sim'
     runs-on: [self-hosted, linux, gnc-sim]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Toolchain versions
         run: |
           cmake --version | head -1
           python3 --version
           node --version
+
+      - name: Lint + type-check (C++ / Python / web)
+        run: |
+          python3 -m venv .venv-lint
+          . .venv-lint/bin/activate
+          pip install -q ruff==0.15.17 mypy==2.1.0 clang-format==22.1.5 numpy scipy pandas
+          ruff check .
+          ruff format --check .
+          mypy
+          mapfile -t files < <(find core apps \
+            \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/build*/*')
+          clang-format --dry-run --Werror "${files[@]}"
+          (cd web && npm ci && npm run lint && npx tsc --noEmit)
 
       - name: Native build + CTest
         run: |
@@ -59,7 +72,7 @@ jobs:
         run: ./build-native/apps/cli/gncsim --config configs/montecarlo_heavy.json --out runs/mc_heavy
 
       - name: Upload Monte Carlo summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: monte-carlo-heavy
           path: runs/mc_heavy/summary.csv

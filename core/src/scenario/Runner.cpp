@@ -32,8 +32,8 @@ Quaternion quatFromTo(const Vector3& from, const Vector3& to) {
   const Vector3 a = from.normalized();
   const Vector3 b = to.normalized();
   const double d = a.dot(b);
-  if (d > 0.999999) return Quaternion{};                       // already aligned
-  if (d < -0.999999) {                                          // opposite: 180° about any ⟂ axis
+  if (d > 0.999999) return Quaternion{};  // already aligned
+  if (d < -0.999999) {                    // opposite: 180° about any ⟂ axis
     Vector3 axis = Vector3{1, 0, 0}.cross(a);
     if (axis.norm() < 1e-6) axis = Vector3{0, 1, 0}.cross(a);
     return Quaternion::fromAxisAngle(axis, M_PI);
@@ -88,7 +88,8 @@ SimResult runSimulation(const SimConfig& cfg) {
   Navigator nav(cfg.dt);
 
   // EKF (relative-state) navigation filter: opt-in via cfg.nav.filter == "ekf"; default stays
-  // alpha-beta. az/el measurement sigma = seeker.los_white [rad]; range sigma = nav.range_white [m].
+  // alpha-beta. az/el measurement sigma = seeker.los_white [rad]; range sigma = nav.range_white
+  // [m].
   const bool use_ekf = (cfg.nav.filter == "ekf");
   Ekf ekf(cfg.dt, cfg.nav.process_accel_psd, cfg.sensors.seeker.los_white,
           cfg.sensors.seeker.los_white, cfg.nav.range_white);
@@ -97,7 +98,8 @@ SimResult runSimulation(const SimConfig& cfg) {
 
   double best_range = (tgt.pos - veh.pos).norm();
   double best_t = 0.0;
-  Vector3 accel_achieved;  // realized guidance accel, lagged toward the command (finite autopilot τ)
+  Vector3
+      accel_achieved;  // realized guidance accel, lagged toward the command (finite autopilot τ)
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
   for (int i = 0; i <= steps; ++i) {
@@ -244,8 +246,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     }
 
     // --- Termination ---
-    if (veh.pos.z < 0.0 && t > 0.0) break;                        // hit the ground
-    if (truth.v_closing < 0.0 && truth.range < 3000.0) break;     // passed CPA in the terminal phase
+    if (veh.pos.z < 0.0 && t > 0.0) break;                     // hit the ground
+    if (truth.v_closing < 0.0 && truth.range < 3000.0) break;  // passed CPA in the terminal phase
 
     // --- Propagate target then vehicle ---
     const Vector3 ta = targetAccel(cfg.target, tgt, t);

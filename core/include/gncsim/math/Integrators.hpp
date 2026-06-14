@@ -1,5 +1,6 @@
 // gnc-sim — generic fixed-step integrators (RK4, RK2/midpoint, Euler).
-// State must support: operator+(State), operator*(double).  Deriv is callable as f(t, State)->State.
+// State must support: operator+(State), operator*(double).  Deriv is callable as f(t,
+// State)->State.
 #pragma once
 
 namespace gncsim {

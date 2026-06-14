@@ -18,17 +18,19 @@ from .plots import plot_miss_histogram
 @dataclass
 class MonteCarloStats:
     n: int
-    cep: float          # circular error probable (median miss distance) [m]
-    mean: float         # mean miss distance [m]
-    std: float          # std of miss distance [m]
-    p90: float          # 90th-percentile miss [m]
+    cep: float  # circular error probable (median miss distance) [m]
+    mean: float  # mean miss distance [m]
+    std: float  # std of miss distance [m]
+    p90: float  # 90th-percentile miss [m]
     intercept_rate: float  # fraction of cases flagged intercept
-    rms: float          # RMS miss distance [m]
+    rms: float  # RMS miss distance [m]
 
     def summary_line(self) -> str:
-        return (f"n={self.n}  CEP={self.cep:.2f} m  mean={self.mean:.2f} m  "
-                f"std={self.std:.2f} m  P90={self.p90:.2f} m  "
-                f"RMS={self.rms:.2f} m  intercept={self.intercept_rate*100:.1f}%")
+        return (
+            f"n={self.n}  CEP={self.cep:.2f} m  mean={self.mean:.2f} m  "
+            f"std={self.std:.2f} m  P90={self.p90:.2f} m  "
+            f"RMS={self.rms:.2f} m  intercept={self.intercept_rate * 100:.1f}%"
+        )
 
 
 def compute_stats(summary: pd.DataFrame) -> MonteCarloStats:

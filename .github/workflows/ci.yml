@@ -6,11 +6,48 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Lint + type-check (C++ / Python / web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+
+      # --- Python: ruff (lint + format) and mypy (types) ---
+      - name: Install Python linters
+        run: pip install ruff==0.15.17 mypy==2.1.0 numpy scipy pandas
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Mypy type-check
+        run: mypy
+
+      # --- C++: clang-format (pinned to match the version contributors run) ---
+      - name: Install clang-format
+        run: pip install clang-format==22.1.5
+      - name: Clang-format check
+        run: |
+          mapfile -t files < <(find core apps \
+            \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/build*/*')
+          clang-format --dry-run --Werror "${files[@]}"
+
+      # --- Web: ESLint + TypeScript ---
+      - name: Web lint + type-check
+        run: |
+          cd web
+          npm ci
+          npm run lint
+          npx tsc --noEmit
+
   native:
     name: Native build + C++ tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install toolchain
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
       - name: Build + test (CTest)
@@ -19,7 +56,7 @@ jobs:
           cmake --build build-native -j"$(nproc)"
           ctest --test-dir build-native --output-on-failure
       - name: Upload native CLI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gncsim-native
           path: build-native/apps/cli/gncsim
@@ -29,12 +66,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: native
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: { python-version: '3.11' }
       - name: Install deps
         run: pip install -r postproc/requirements.txt
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with: { name: gncsim-native, path: build-native/apps/cli }
       - run: chmod +x build-native/apps/cli/gncsim
       - name: Sensor characterization (writes configs/sensor_params.json)
@@ -47,24 +84,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: native
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install toolchain
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
       - uses: mymindstorm/setup-emsdk@v14
         with: { version: '3.1.61' }
       - name: Build WASM
         run: ./scripts/build-wasm.sh
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with: { name: gncsim-native, path: build-native/apps/cli }
       - run: chmod +x build-native/apps/cli/gncsim
       - name: Native ↔ WASM parity check
         run: node scripts/parity-check.mjs configs/homing_3dof.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: '20' }
       - name: Build web app
         run: cd web && npm ci && npm run build
       - name: Upload web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: web-out
           path: web/out

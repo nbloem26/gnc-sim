@@ -30,9 +30,9 @@ bool invert3x3(const std::array<double, 9>& m, std::array<double, 9>& out) {
   const double d = m[3], e = m[4], f = m[5];
   const double g = m[6], h = m[7], i = m[8];
 
-  const double A = e * i - f * h;   // cofactor 00
+  const double A = e * i - f * h;     // cofactor 00
   const double B = -(d * i - f * g);  // cofactor 01
-  const double C = d * h - e * g;   // cofactor 02
+  const double C = d * h - e * g;     // cofactor 02
   const double det = a * A + b * B + c * C;
   if (std::fabs(det) < 1e-300) return false;
   const double inv_det = 1.0 / det;
@@ -78,7 +78,8 @@ void Ekf::predict(const Vector3& a_vehicle) {
   x_[5] += uz * dt;
 
   // P' = F P F^T + Q. F mixes the velocity block into the position block per axis; with the sparse
-  // structure this is, treating P as 2x2 blocks of diagonal 3x3 sub-blocks per axis [Ppp Ppv; Pvp Pvv]:
+  // structure this is, treating P as 2x2 blocks of diagonal 3x3 sub-blocks per axis [Ppp Ppv; Pvp
+  // Pvv]:
   //   Ppp' = Ppp + dt*(Ppv + Pvp) + dt^2*Pvv
   //   Ppv' = Ppv + dt*Pvv
   //   Pvp' = Pvp + dt*Pvv
@@ -128,7 +129,8 @@ void Ekf::predict(const Vector3& a_vehicle) {
 // ── Measurement update ──────────────────────────────────────────────────────────────────────────
 void Ekf::update(double az, double el, double range) {
   if (!initialized_) {
-    // Bootstrap: reconstruct the relative position from the spherical measurement, velocity unknown.
+    // Bootstrap: reconstruct the relative position from the spherical measurement, velocity
+    // unknown.
     const double cos_el = std::cos(el);
     x_[0] = range * cos_el * std::cos(az);
     x_[1] = range * cos_el * std::sin(az);
@@ -138,8 +140,8 @@ void Ekf::update(double az, double el, double range) {
     // Large, diagonal initial covariance: position roughly to the measurement scale, velocity wide.
     for (int k = 0; k < 36; ++k) p_[k] = 0.0;
     auto P0 = [&](int idx) -> double& { return p_[idx * 6 + idx]; };
-    const double pos_var = 1.0e6;   // ~1 km std
-    const double vel_var = 1.0e6;   // ~1 km/s std
+    const double pos_var = 1.0e6;  // ~1 km std
+    const double vel_var = 1.0e6;  // ~1 km/s std
     P0(0) = P0(1) = P0(2) = pos_var;
     P0(3) = P0(4) = P0(5) = vel_var;
 
@@ -225,7 +227,8 @@ void Ekf::update(double az, double el, double range) {
     }
   }
 
-  // Innovation y = z - h(x); wrap the azimuth (and elevation, bounded to [-pi/2,pi/2], stays small).
+  // Innovation y = z - h(x); wrap the azimuth (and elevation, bounded to [-pi/2,pi/2], stays
+  // small).
   std::array<double, 3> y{wrapPi(az - az_pred), wrapPi(el - el_pred), range - r_pred};
 
   // NIS = y^T Sinv y (chi-square, dof = 3).

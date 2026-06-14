@@ -69,7 +69,7 @@ inline double stepAxisBias(double& bias, double white, double bias_instability, 
                            double rrw, double dt, Rng& rng) {
   // --- Gauss-Markov bias instability ---
   if (tau > 0.0 && bias_instability > 0.0) {
-    const double phi = std::exp(-dt / tau);                  // GM decay factor
+    const double phi = std::exp(-dt / tau);                             // GM decay factor
     const double q_gm = bias_instability * std::sqrt(1.0 - phi * phi);  // driving-noise std
     bias = bias * phi + rng.gaussian(0.0, q_gm);
   } else {
@@ -105,13 +105,12 @@ void Imu::measure(const Vector3& accel_true, const Vector3& gyro_true, Vector3& 
   accel_meas = accel_true * (1.0 + cfg_.accel_scale_factor) + accel_bias_ + accel_white;
 
   // --- Gyro (per axis) ---
-  const Vector3 gyro_white{
-      stepAxisBias(gyro_bias_.x, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                   cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
-      stepAxisBias(gyro_bias_.y, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                   cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
-      stepAxisBias(gyro_bias_.z, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                   cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_)};
+  const Vector3 gyro_white{stepAxisBias(gyro_bias_.x, cfg_.gyro_white, cfg_.gyro_bias_instability,
+                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
+                           stepAxisBias(gyro_bias_.y, cfg_.gyro_white, cfg_.gyro_bias_instability,
+                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
+                           stepAxisBias(gyro_bias_.z, cfg_.gyro_white, cfg_.gyro_bias_instability,
+                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_)};
   gyro_meas = gyro_true * (1.0 + cfg_.gyro_scale_factor) + gyro_bias_ + gyro_white;
 }
 

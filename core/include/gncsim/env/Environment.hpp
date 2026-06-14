@@ -20,10 +20,10 @@ class GravityModel {
 
 // US Standard Atmosphere 1976 sample at geometric altitude (valid 0..86 km; clamps outside).
 struct AtmSample {
-  double density = 0.0;        // [kg/m^3]
-  double pressure = 0.0;       // [Pa]
-  double temperature = 0.0;    // [K]
-  double speed_of_sound = 0.0; // [m/s]
+  double density = 0.0;         // [kg/m^3]
+  double pressure = 0.0;        // [Pa]
+  double temperature = 0.0;     // [K]
+  double speed_of_sound = 0.0;  // [m/s]
 };
 
 AtmSample atmosphereUSSA76(double altitude_m);

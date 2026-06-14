@@ -21,13 +21,13 @@ from dataclasses import dataclass
 import numpy as np
 
 # --- Physical constants (match Environment.cpp exactly) ---
-G0 = 9.80665          # standard gravity [m/s^2]
-R_GAS = 287.05287     # specific gas constant for air [J/(kg*K)]
-GAMMA = 1.4           # ratio of specific heats [-]
-RE_USSA = 6356766.0   # USSA76 effective Earth radius [m]
-T0 = 288.15           # sea-level temperature [K]
-P0 = 101325.0         # sea-level pressure [Pa]
-TOP_H = 84852.0       # geopotential top of modeled region [m]
+G0 = 9.80665  # standard gravity [m/s^2]
+R_GAS = 287.05287  # specific gas constant for air [J/(kg*K)]
+GAMMA = 1.4  # ratio of specific heats [-]
+RE_USSA = 6356766.0  # USSA76 effective Earth radius [m]
+T0 = 288.15  # sea-level temperature [K]
+P0 = 101325.0  # sea-level pressure [Pa]
+TOP_H = 84852.0  # geopotential top of modeled region [m]
 
 # (geopotential base altitude [m], lapse rate [K/m])
 _LAYERS = [
@@ -66,8 +66,8 @@ class AtmSample:
     """Atmospheric state at an altitude."""
 
     temperature: float  # [K]
-    pressure: float     # [Pa]
-    density: float      # [kg/m^3]
+    pressure: float  # [Pa]
+    density: float  # [kg/m^3]
     sound_speed: float  # [m/s]
 
 
@@ -99,7 +99,9 @@ def ussa76(altitude_m: float) -> AtmSample:
     return AtmSample(temperature, pressure, density, sound_speed)
 
 
-def terminal_velocity(mass: float, cd: float, ref_area: float, altitude_m: float, g: float = G0) -> float:
+def terminal_velocity(
+    mass: float, cd: float, ref_area: float, altitude_m: float, g: float = G0
+) -> float:
     """Closed-form terminal velocity v = sqrt(2 m g / (rho Cd A)) using USSA76 density."""
     rho = ussa76(altitude_m).density
     return float(np.sqrt(2.0 * mass * g / (rho * cd * ref_area)))

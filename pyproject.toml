@@ -1,0 +1,19 @@
+# Python tooling config for gnc-sim (sensors/ + postproc/).
+# Lint + format: ruff. Static types: mypy. Both run in CI (see .github/workflows/ci.yml).
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Notebooks carry exploratory patterns (cell magics, out-of-order imports); lint the .py only.
+extend-exclude = ["*.ipynb", ".venv", "build-native", "build-wasm"]
+
+[tool.ruff.lint]
+# pycodestyle (E/W), pyflakes (F), isort (I), pyupgrade (UP), flake8-bugbear (B).
+select = ["E", "W", "F", "I", "UP", "B"]
+# E501 (line length) is owned by `ruff format`; long string literals/comments are intentional.
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true   # numpy/scipy/pandas ship partial or no stubs
+files = ["sensors", "postproc/gncpost"]

@@ -12,14 +12,14 @@ namespace gncsim {
 
 // Relative engagement geometry between vehicle and target (world frame).
 struct Engagement {
-  Vector3 rel_pos;        // target - vehicle [m]
-  Vector3 rel_vel;        // target_vel - vehicle_vel [m/s]
-  Vector3 los_unit;       // unit line-of-sight (vehicle->target)
-  Vector3 los_rate_vec;   // LOS rotation rate vector [rad/s]
-  double range = 0.0;     // |rel_pos| [m]
-  double v_closing = 0.0; // closing speed [m/s] (positive = closing)
-  double los_angle = 0.0; // LOS elevation angle in the vertical plane [rad]
-  double los_rate = 0.0;  // |los_rate_vec| [rad/s]
+  Vector3 rel_pos;         // target - vehicle [m]
+  Vector3 rel_vel;         // target_vel - vehicle_vel [m/s]
+  Vector3 los_unit;        // unit line-of-sight (vehicle->target)
+  Vector3 los_rate_vec;    // LOS rotation rate vector [rad/s]
+  double range = 0.0;      // |rel_pos| [m]
+  double v_closing = 0.0;  // closing speed [m/s] (positive = closing)
+  double los_angle = 0.0;  // LOS elevation angle in the vertical plane [rad]
+  double los_rate = 0.0;   // |los_rate_vec| [rad/s]
 };
 
 Engagement computeEngagement(const EntityState& vehicle, const EntityState& target);

@@ -30,8 +30,9 @@ def plot_trajectory(run: Run, mode: str = "east_up", ax=None):
         ax.plot(veh["x"], veh["y"], veh["z"], "-", color="#1f77b4", lw=1.8, label="vehicle")
         if not tgt.empty:
             ax.plot(tgt["x"], tgt["y"], tgt["z"], "--", color="#d62728", lw=1.5, label="target")
-            ax.scatter(tgt["x"].iloc[-1], tgt["y"].iloc[-1], tgt["z"].iloc[-1],
-                       color="#d62728", s=40)
+            ax.scatter(
+                tgt["x"].iloc[-1], tgt["y"].iloc[-1], tgt["z"].iloc[-1], color="#d62728", s=40
+            )
         ax.set_xlabel("East [m]")
         ax.set_ylabel("North [m]")
         ax.set_zlabel("Up [m]")

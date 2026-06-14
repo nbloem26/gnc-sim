@@ -2,9 +2,8 @@
 #include "gncsim/core/Config.hpp"
 
 #include <cmath>
-#include <stdexcept>
-
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 namespace gncsim {
 
@@ -68,7 +67,8 @@ SimConfig loadConfigFromString(const std::string& json_text) {
   if (j.contains("env")) {
     const auto& e = j["env"];
     c.env.g0 = get_or<double>(e, "g0", c.env.g0);
-    c.env.altitude_dependent_g = get_or<bool>(e, "altitude_dependent_g", c.env.altitude_dependent_g);
+    c.env.altitude_dependent_g =
+        get_or<bool>(e, "altitude_dependent_g", c.env.altitude_dependent_g);
     c.env.atmosphere = get_or<bool>(e, "atmosphere", c.env.atmosphere);
   }
 
@@ -90,8 +90,10 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     const auto& v = j["vehicle"];
     c.vehicle.pos0 = get_vec(v, "pos0", c.vehicle.pos0);
     c.vehicle.launch_speed = get_or<double>(v, "launch_speed", c.vehicle.launch_speed);
-    c.vehicle.launch_elevation_deg = get_or<double>(v, "launch_elevation_deg", c.vehicle.launch_elevation_deg);
-    c.vehicle.launch_azimuth_deg = get_or<double>(v, "launch_azimuth_deg", c.vehicle.launch_azimuth_deg);
+    c.vehicle.launch_elevation_deg =
+        get_or<double>(v, "launch_elevation_deg", c.vehicle.launch_elevation_deg);
+    c.vehicle.launch_azimuth_deg =
+        get_or<double>(v, "launch_azimuth_deg", c.vehicle.launch_azimuth_deg);
     c.vehicle.mass0 = get_or<double>(v, "mass0", c.vehicle.mass0);
     c.vehicle.inertia = get_or<double>(v, "inertia", c.vehicle.inertia);
   }
@@ -108,7 +110,8 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     const auto& ct = j["control"];
     c.control.kp = get_or<double>(ct, "kp", c.control.kp);
     c.control.kd = get_or<double>(ct, "kd", c.control.kd);
-    c.control.max_fin_deflection = get_or<double>(ct, "max_fin_deflection", c.control.max_fin_deflection);
+    c.control.max_fin_deflection =
+        get_or<double>(ct, "max_fin_deflection", c.control.max_fin_deflection);
   }
 
   if (j.contains("sensors")) {
@@ -117,15 +120,20 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     if (s.contains("imu")) {
       const auto& m = s["imu"];
       c.sensors.imu.accel_white = get_or<double>(m, "accel_white", c.sensors.imu.accel_white);
-      c.sensors.imu.accel_bias_instability = get_or<double>(m, "accel_bias_instability", c.sensors.imu.accel_bias_instability);
-      c.sensors.imu.accel_bias_tau = get_or<double>(m, "accel_bias_tau", c.sensors.imu.accel_bias_tau);
+      c.sensors.imu.accel_bias_instability =
+          get_or<double>(m, "accel_bias_instability", c.sensors.imu.accel_bias_instability);
+      c.sensors.imu.accel_bias_tau =
+          get_or<double>(m, "accel_bias_tau", c.sensors.imu.accel_bias_tau);
       c.sensors.imu.accel_rrw = get_or<double>(m, "accel_rrw", c.sensors.imu.accel_rrw);
-      c.sensors.imu.accel_scale_factor = get_or<double>(m, "accel_scale_factor", c.sensors.imu.accel_scale_factor);
+      c.sensors.imu.accel_scale_factor =
+          get_or<double>(m, "accel_scale_factor", c.sensors.imu.accel_scale_factor);
       c.sensors.imu.gyro_white = get_or<double>(m, "gyro_white", c.sensors.imu.gyro_white);
-      c.sensors.imu.gyro_bias_instability = get_or<double>(m, "gyro_bias_instability", c.sensors.imu.gyro_bias_instability);
+      c.sensors.imu.gyro_bias_instability =
+          get_or<double>(m, "gyro_bias_instability", c.sensors.imu.gyro_bias_instability);
       c.sensors.imu.gyro_bias_tau = get_or<double>(m, "gyro_bias_tau", c.sensors.imu.gyro_bias_tau);
       c.sensors.imu.gyro_rrw = get_or<double>(m, "gyro_rrw", c.sensors.imu.gyro_rrw);
-      c.sensors.imu.gyro_scale_factor = get_or<double>(m, "gyro_scale_factor", c.sensors.imu.gyro_scale_factor);
+      c.sensors.imu.gyro_scale_factor =
+          get_or<double>(m, "gyro_scale_factor", c.sensors.imu.gyro_scale_factor);
     }
     if (s.contains("seeker")) {
       const auto& sk = s["seeker"];
@@ -149,15 +157,19 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.target.maneuver = get_or<std::string>(t, "maneuver", c.target.maneuver);
     c.target.maneuver_g = get_or<double>(t, "maneuver_g", c.target.maneuver_g);
     c.target.maneuver_freq = get_or<double>(t, "maneuver_freq", c.target.maneuver_freq);
-    c.target.maneuver_phase_deg = get_or<double>(t, "maneuver_phase_deg", c.target.maneuver_phase_deg);
+    c.target.maneuver_phase_deg =
+        get_or<double>(t, "maneuver_phase_deg", c.target.maneuver_phase_deg);
   }
 
   if (j.contains("monte_carlo")) {
     const auto& m = j["monte_carlo"];
     c.monte_carlo.num_cases = get_or<int>(m, "num_cases", c.monte_carlo.num_cases);
-    c.monte_carlo.launch_speed_sigma = get_or<double>(m, "launch_speed_sigma", c.monte_carlo.launch_speed_sigma);
-    c.monte_carlo.launch_elevation_sigma_deg = get_or<double>(m, "launch_elevation_sigma_deg", c.monte_carlo.launch_elevation_sigma_deg);
-    c.monte_carlo.target_pos_sigma = get_or<double>(m, "target_pos_sigma", c.monte_carlo.target_pos_sigma);
+    c.monte_carlo.launch_speed_sigma =
+        get_or<double>(m, "launch_speed_sigma", c.monte_carlo.launch_speed_sigma);
+    c.monte_carlo.launch_elevation_sigma_deg =
+        get_or<double>(m, "launch_elevation_sigma_deg", c.monte_carlo.launch_elevation_sigma_deg);
+    c.monte_carlo.target_pos_sigma =
+        get_or<double>(m, "target_pos_sigma", c.monte_carlo.target_pos_sigma);
   }
 
   return c;

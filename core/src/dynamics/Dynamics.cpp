@@ -70,7 +70,8 @@ struct QuatState {
 
 // Integrate the (unnormalized) quaternion one step for a fixed body rate `omega`.
 // Result is NOT renormalized here — caller renormalizes once after the step.
-QuatState integrateAttitude(const QuatState& y0, const Vector3& omega, double dt, Integrator integ) {
+QuatState integrateAttitude(const QuatState& y0, const Vector3& omega, double dt,
+                            Integrator integ) {
   const auto deriv = [&omega](double /*t*/, const QuatState& y) -> QuatState {
     return {y.q.derivative(omega)};
   };
