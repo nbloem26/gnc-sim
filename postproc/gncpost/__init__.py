@@ -11,6 +11,7 @@ Submodules:
     plots        — trajectory / state / guidance / miss-distance figures
     validate     — analytic validation harness (runs the native CLI)
     montecarlo   — CEP / dispersion analysis of a Monte-Carlo summary
+    rundb        — SQLite run database: queryable campaigns + provenance (issue #43)
     loop_closure — re-derive IMU noise from sim output (fidelity proof)
 """
 

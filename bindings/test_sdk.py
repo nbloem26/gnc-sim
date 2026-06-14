@@ -144,3 +144,25 @@ def test_monte_carlo_deterministic() -> None:
     assert 0.0 <= a["p_kill"] <= 1.0
     assert a["miss_distance"].dtype == np.float64
     assert a["intercept"].dtype == np.bool_
+
+
+def test_monte_carlo_parallel_bit_identical_to_serial() -> None:
+    """workers>1 must produce the BIT-IDENTICAL batch as the serial run (issue #43)."""
+    cfg = _load_cfg()
+    cfg["target"] = dict(cfg.get("target", {}), maneuver="weave")
+    cfg["monte_carlo"] = {
+        "num_cases": 0,
+        "launch_speed_sigma": 12.0,
+        "launch_elevation_sigma_deg": 1.5,
+        "target_pos_sigma": 60.0,
+    }
+    serial = gncsim.monte_carlo(cfg, n=48, workers=1)
+    for workers in (2, 4, 8):
+        par = gncsim.monte_carlo(cfg, n=48, workers=workers)
+        assert np.array_equal(serial["seed"], par["seed"]), f"seed mismatch at workers={workers}"
+        # Exact (bit-for-bit) equality, not approximate — the contract of the parallel driver.
+        assert np.array_equal(serial["miss_distance"], par["miss_distance"]), workers
+        assert np.array_equal(serial["intercept_time"], par["intercept_time"]), workers
+        assert np.array_equal(serial["intercept"], par["intercept"]), workers
+        assert serial["intercepts"] == par["intercepts"]
+        assert serial["p_kill"] == par["p_kill"]

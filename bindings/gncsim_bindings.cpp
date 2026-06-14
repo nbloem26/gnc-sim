@@ -108,16 +108,24 @@ py::dict run(const std::string& config_json) {
 }
 
 // Run a dispersed Monte Carlo batch (IC dispersion lives in the C++ core — MonteCarlo.cpp). `n`
-// overrides cfg.monte_carlo.num_cases when > 0. `workers` is accepted for API stability (the core
-// batch is currently serial + deterministic); it is a no-op until issue #43 lands the thread pool.
-// Returns columnar numpy arrays (one row per case): index, seed, miss_distance, intercept_time,
-// intercept.
+// overrides cfg.monte_carlo.num_cases when > 0. `workers` distributes the cases across a C++ thread
+// pool (issue #43); the result is BIT-IDENTICAL to the serial batch for the same seed + N because
+// every case's RNG stream is drawn up-front in case order, independent of scheduling. `workers <=
+// 1` runs serially. Returns columnar numpy arrays (one row per case): index, seed, miss_distance,
+// intercept_time, intercept.
 py::dict monteCarlo(const std::string& config_json, int n, int workers) {
-  (void)workers;  // reserved: serial deterministic batch today (see issue #43).
   gncsim::SimConfig cfg = gncsim::loadConfigFromString(config_json);
   if (n > 0) cfg.monte_carlo.num_cases = n;
 
-  const std::vector<gncsim::MonteCarloCase> cases = gncsim::runMonteCarlo(cfg);
+  std::vector<gncsim::MonteCarloCase> cases;
+  {
+    // Release the GIL: the batch is pure C++ compute (the cases never touch Python), so this lets
+    // the thread pool actually use multiple cores instead of serializing on the interpreter lock.
+    py::gil_scoped_release release;
+    gncsim::MonteCarloRunOptions opts;
+    opts.num_workers = workers;
+    cases = gncsim::runMonteCarloParallel(cfg, opts);
+  }
   const std::size_t m = cases.size();
 
   py::array_t<long long> index(static_cast<py::ssize_t>(m));
@@ -164,5 +172,6 @@ PYBIND11_MODULE(_gncsim, m) {
       "Run one engagement from a JSON config string; returns a result dict with a numpy 'series'.");
   m.def("monte_carlo", &monteCarlo, py::arg("config_json"), py::arg("n") = 0,
         py::arg("workers") = 1,
-        "Run a dispersed Monte Carlo batch; returns columnar numpy arrays (one row per case).");
+        "Run a dispersed Monte Carlo batch across `workers` threads; bit-identical to the serial "
+        "batch for the same seed + N. Returns columnar numpy arrays (one row per case).");
 }

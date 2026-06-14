@@ -65,8 +65,10 @@ def monte_carlo(cfg: ConfigType, n: int = 0, workers: int = 1) -> dict[str, Any]
     Args:
         cfg: Config dict or JSON string. Its ``monte_carlo`` block supplies the dispersion sigmas.
         n: Number of cases; when > 0 it overrides ``cfg.monte_carlo.num_cases``.
-        workers: Reserved for a future thread pool (issue #43). The core batch is currently serial and
-            deterministic, so this is a no-op today; kept for API stability.
+        workers: Number of C++ worker threads to distribute the cases across (issue #43). ``workers
+            <= 1`` runs serially. The batch is **bit-identical to the serial run** for the same seed +
+            N regardless of ``workers`` — each case's RNG stream is derived up-front in case order, so
+            results never depend on thread scheduling.
 
     Returns:
         A dict with summary scalars (``num_cases``, ``intercepts``, ``p_kill``) and columnar numpy
