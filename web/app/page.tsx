@@ -30,6 +30,14 @@ const TelemetryExplorer = dynamic(() => import('@/components/TelemetryExplorer')
   loading: () => <div className="placeholder">Loading explorer…</div>,
 });
 
+// 3D Globe pulls in CesiumJS — a heavy, window-bound bundle. Load client-only and
+// only when its tab actually mounts (lazy via <Tabs>): the Cesium chunk must never
+// land in the first-load JS or under any other tab.
+const CesiumGlobe = dynamic(() => import('@/components/CesiumGlobe'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading 3D globe…</div>,
+});
+
 export default function Home() {
   const [result, setResult] = useState<SimResult | null>(null);
   const [lastConfig, setLastConfig] = useState<SimConfig | null>(null);
@@ -107,6 +115,11 @@ export default function Home() {
         id: 'montecarlo',
         label: 'Monte Carlo',
         render: () => <MonteCarloPanel baseConfig={lastConfig} mock={mock} />,
+      },
+      {
+        id: 'globe',
+        label: '3D Globe',
+        render: () => <CesiumGlobe result={result} />,
       },
       {
         id: 'explorer',
