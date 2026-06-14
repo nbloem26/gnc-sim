@@ -47,10 +47,11 @@ struct PropulsionConfig {
 };
 
 struct GuidanceConfig {
-  std::string law = "pronav";  // "pronav" | "none"
-  double nav_constant = 3.0;   // PN gain N
-  double max_accel = 300.0;    // accel command limit [m/s^2]
-  double time_constant = 0.0;  // guidance/autopilot lag [s]; 0 = ideal instantaneous
+  std::string law = "pronav";   // "pronav" | "apn" | "none"
+  double nav_constant = 3.0;    // PN gain N
+  double max_accel = 300.0;     // accel command limit [m/s^2]
+  double time_constant = 0.0;   // guidance/autopilot lag [s]; 0 = ideal instantaneous
+  double apn_filter_tau = 0.1;  // APN target-accel estimator low-pass time constant [s]
 };
 
 struct ControlConfig {  // 6DOF acceleration autopilot
