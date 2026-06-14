@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-cesium-assets.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-cesium-assets.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "cesium": "1.140.0",
     "leaflet": "^1.9.4",
     "next": "^14.2.5",
     "plotly.js-dist-min": "^2.35.2",
