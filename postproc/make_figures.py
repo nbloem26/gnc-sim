@@ -38,6 +38,7 @@ WEB_FIGURES = [
     "montecarlo_cep.png",
     "validation_summary.png",
     "trajectory_sample.png",
+    "fusion_track_error.png",
 ]
 
 
@@ -90,6 +91,17 @@ def make_montecarlo(batch_dir: Path) -> None:
     print("  MC:", stats.summary_line())
 
 
+def make_fusion() -> None:
+    from gncpost.fusion import plot_fusion, run_fusion
+
+    results = run_fusion()
+    fig = plot_fusion(results)
+    fig.savefig(POSTPROC_FIG / "fusion_track_error.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    for r in results:
+        print("  fusion:", r.summary_line())
+
+
 def copy_to_web() -> None:
     WEB_FIG.mkdir(parents=True, exist_ok=True)
     for name in WEB_FIGURES:
@@ -106,6 +118,7 @@ def main() -> None:
     make_trajectory(REPO_ROOT / "runs" / "sample_run")
     make_validation_summary()
     make_montecarlo(REPO_ROOT / "runs" / "mc_batch")
+    make_fusion()
 
     # Synthetic-IMU Allan figure (sensors/figures/allan_deviation.png).
     import allan_variance

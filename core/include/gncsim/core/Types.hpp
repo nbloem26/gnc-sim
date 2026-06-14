@@ -55,6 +55,12 @@ struct Frame {
   double range = 0.0;      // vehicle-to-target range [m]
   double nav_nis = 0.0;    // EKF normalized innovation squared (dof=3); 0 on the alpha-beta path
 
+  // Multi-sensor target track (issue #5). Zero on every non-tracker path (default). When the
+  // trackers fusion path is enabled, track_pos_est is the fused absolute target-position estimate
+  // [m] (ENU) and track_nis is the last sensor update's NIS.
+  Vector3 track_pos_est;   // fused absolute target-position estimate [m]; (0,0,0) when disabled
+  double track_nis = 0.0;  // last fused sensor-update NIS; 0 when disabled
+
   // Sensors (true vs measured)
   Vector3 imu_accel_true, imu_accel_meas;               // specific force [m/s^2]
   Vector3 imu_gyro_true, imu_gyro_meas;                 // angular rate [rad/s]
