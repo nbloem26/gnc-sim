@@ -75,6 +75,12 @@ struct SensorConfig {
   SeekerNoise seeker;
 };
 
+struct NavConfig {
+  std::string filter = "alpha_beta";   // "alpha_beta" | "ekf"
+  double process_accel_psd = 50.0;     // EKF target-accel PSD q [m^2/s^3] per axis
+  double range_white = 5.0;            // range measurement noise std [m] (EKF range channel)
+};
+
 struct TargetConfig {
   Vector3 pos0{8000.0, 0.0, 3000.0};
   Vector3 vel0{-250.0, 0.0, 0.0};
@@ -106,6 +112,7 @@ struct SimConfig {
   GuidanceConfig guidance;
   ControlConfig control;
   SensorConfig sensors;
+  NavConfig nav;
   TargetConfig target;
   MonteCarloConfig monte_carlo;
 };

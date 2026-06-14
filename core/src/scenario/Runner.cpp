@@ -17,6 +17,7 @@
 #include "gncsim/core/Rng.hpp"
 #include "gncsim/dynamics/Dynamics.hpp"
 #include "gncsim/env/Environment.hpp"
+#include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/sensors/Sensors.hpp"
 
@@ -86,6 +87,12 @@ SimResult runSimulation(const SimConfig& cfg) {
   Seeker seeker(cfg.sensors.seeker, rng);
   Navigator nav(cfg.dt);
 
+  // EKF (relative-state) navigation filter: opt-in via cfg.nav.filter == "ekf"; default stays
+  // alpha-beta. az/el measurement sigma = seeker.los_white [rad]; range sigma = nav.range_white [m].
+  const bool use_ekf = (cfg.nav.filter == "ekf");
+  Ekf ekf(cfg.dt, cfg.nav.process_accel_psd, cfg.sensors.seeker.los_white,
+          cfg.sensors.seeker.los_white, cfg.nav.range_white);
+
   Autopilot autopilot(cfg.control);
 
   double best_range = (tgt.pos - veh.pos).norm();
@@ -107,26 +114,54 @@ SimResult runSimulation(const SimConfig& cfg) {
     const Engagement truth = computeEngagement(veh, tgt);
 
     // --- Navigation: estimate the relative state (noisy seeker when sensors enabled) ---
-    Vector3 measured_rel_pos = truth.rel_pos;
-    double seeker_los_meas = truth.los_angle;
-    if (cfg.sensors.enable) {
-      // Seeker angular noise perturbs the LOS direction (cross-range error grows with range).
-      seeker_los_meas = seeker.measureLos(truth.los_angle, truth.range);
-      const double ang_err = seeker_los_meas - truth.los_angle;
-      // Apply the angular error about a horizontal axis perpendicular to the LOS.
-      Vector3 axis = truth.los_unit.cross(Vector3{0, 0, 1});
-      if (axis.norm() < 1e-6) axis = Vector3{0, 1, 0};
-      measured_rel_pos = Quaternion::fromAxisAngle(axis, ang_err).rotate(truth.rel_pos);
-    }
-    nav.update(measured_rel_pos);
-
-    // Relative state used by guidance (filtered estimate, or truth if noise-free).
     Engagement est = truth;
-    if (cfg.sensors.enable) {
+    double seeker_los_meas = truth.los_angle;
+    double nav_nis = 0.0;
+
+    if (use_ekf) {
+      // EKF path: az/el/range measurement of the relative position (truth when sensors disabled,
+      // Gaussian-corrupted via the run's Rng when enabled). Native and WASM run identical code.
+      const double horiz =
+          std::sqrt(truth.rel_pos.x * truth.rel_pos.x + truth.rel_pos.y * truth.rel_pos.y);
+      double az = std::atan2(truth.rel_pos.y, truth.rel_pos.x);
+      double el = std::atan2(truth.rel_pos.z, horiz);
+      double rng_meas = truth.range;
+      if (cfg.sensors.enable) {
+        az += rng.gaussian(0.0, cfg.sensors.seeker.los_white);
+        el += rng.gaussian(0.0, cfg.sensors.seeker.los_white);
+        rng_meas += rng.gaussian(0.0, cfg.nav.range_white);
+      }
+      seeker_los_meas = el;  // report the (measured) LOS elevation for telemetry parity
+
+      ekf.predict(accel_achieved);  // achieved guidance accel from the previous step (0 on step 0)
+      ekf.update(az, el, rng_meas);
+      nav_nis = ekf.nis();
+
       EntityState veh_est = veh, tgt_est = tgt;
-      tgt_est.pos = veh.pos + nav.relPos();
-      tgt_est.vel = veh.vel + nav.relVel();
+      tgt_est.pos = veh.pos + ekf.relPos();
+      tgt_est.vel = veh.vel + ekf.relVel();
       est = computeEngagement(veh_est, tgt_est);
+    } else {
+      // Alpha-beta path (default). Draw order is unchanged from the original implementation.
+      Vector3 measured_rel_pos = truth.rel_pos;
+      if (cfg.sensors.enable) {
+        // Seeker angular noise perturbs the LOS direction (cross-range error grows with range).
+        seeker_los_meas = seeker.measureLos(truth.los_angle, truth.range);
+        const double ang_err = seeker_los_meas - truth.los_angle;
+        // Apply the angular error about a horizontal axis perpendicular to the LOS.
+        Vector3 axis = truth.los_unit.cross(Vector3{0, 0, 1});
+        if (axis.norm() < 1e-6) axis = Vector3{0, 1, 0};
+        measured_rel_pos = Quaternion::fromAxisAngle(axis, ang_err).rotate(truth.rel_pos);
+      }
+      nav.update(measured_rel_pos);
+
+      // Relative state used by guidance (filtered estimate, or truth if noise-free).
+      if (cfg.sensors.enable) {
+        EntityState veh_est = veh, tgt_est = tgt;
+        tgt_est.pos = veh.pos + nav.relPos();
+        tgt_est.vel = veh.vel + nav.relVel();
+        est = computeEngagement(veh_est, tgt_est);
+      }
     }
 
     // --- Guidance: Proportional Navigation ---
@@ -175,12 +210,18 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.tgt_vel = tgt.vel;
     f.accel_cmd = accel_cmd;
     f.fin_deflection = fin_deflection;
-    f.nav_pos_est = veh.pos + (cfg.sensors.enable ? nav.relPos() : truth.rel_pos);
-    f.nav_vel_est = veh.vel + (cfg.sensors.enable ? nav.relVel() : truth.rel_vel);
+    if (use_ekf) {
+      f.nav_pos_est = veh.pos + ekf.relPos();
+      f.nav_vel_est = veh.vel + ekf.relVel();
+    } else {
+      f.nav_pos_est = veh.pos + (cfg.sensors.enable ? nav.relPos() : truth.rel_pos);
+      f.nav_vel_est = veh.vel + (cfg.sensors.enable ? nav.relVel() : truth.rel_vel);
+    }
     f.los_angle = truth.los_angle;
     f.los_rate = est.los_rate;
     f.v_closing = truth.v_closing;
     f.range = truth.range;
+    f.nav_nis = nav_nis;
     f.imu_accel_true = specific_force;
     f.imu_accel_meas = imu_accel_meas;
     f.imu_gyro_true = veh.angVel;

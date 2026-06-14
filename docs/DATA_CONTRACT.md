@@ -34,6 +34,9 @@ config is valid. Shape (defaults shown):
   "control":  { "kp": 8.0, "kd": 2.5, "max_fin_deflection": 0.35 },   // 6DOF only
   "sensors":  { "enable": false, "imu": { ...see sensor_params.json... },
                 "seeker": { "los_white": 0.0, "los_bias": 0.0, "glint": 0.0 } },
+  "nav":      { "filter": "alpha_beta",       // "alpha_beta" | "ekf" navigation filter
+                "process_accel_psd": 50.0,    // EKF target-accel PSD q [m^2/s^3] per axis
+                "range_white": 5.0 },         // EKF range measurement noise std [m]
   "target":   { "pos0": [8000,0,3000], "vel0": [-250,0,0],
                 "maneuver": "constant", "maneuver_g": 3.0, "maneuver_freq": 0.4 },
   "monte_carlo": { "num_cases": 0, "launch_speed_sigma": 0.0,
@@ -65,7 +68,7 @@ Allan-variance pipeline** (`sensors/`) and fed back into the sim — see §5.
     "tgt_vx": [...], "tgt_vy": [...], "tgt_vz": [...],
     "accel_cmd_x": [...], "accel_cmd_y": [...], "accel_cmd_z": [...],
     "los_angle": [...], "los_rate": [...], "v_closing": [...], "range": [...],
-    "nav_x": [...], "nav_y": [...], "nav_z": [...],
+    "nav_x": [...], "nav_y": [...], "nav_z": [...], "nav_nis": [...],
     "imu_accel_true_x": [...], "imu_accel_meas_x": [...],
     "imu_gyro_true_x": [...], "imu_gyro_meas_x": [...],
     "seeker_los_true": [...], "seeker_los_meas": [...]
@@ -73,7 +76,9 @@ Allan-variance pipeline** (`sensors/`) and fed back into the sim — see §5.
 }
 ```
 
-On error the WASM entry returns `{"error": "<message>"}`.
+`nav_nis` is the EKF navigation filter's normalized innovation squared (chi-square, dof = 3) each
+step. It is `0` on the default alpha-beta path; on the EKF path (`nav.filter == "ekf"`) its mean
+should sit near 3 for a consistent filter. On error the WASM entry returns `{"error": "<message>"}`.
 
 ---
 
@@ -85,7 +90,7 @@ On error the WASM entry returns `{"error": "<message>"}`.
 |---|---|
 | `vehicle.csv` | `t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach` |
 | `target.csv`  | `t,x,y,z,vx,vy,vz` |
-| `gnc.csv`     | `t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,range,nav_x,nav_y,nav_z` |
+| `gnc.csv`     | `t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,range,nav_x,nav_y,nav_z,nav_nis` |
 | `sensors.csv` | `t,imu_accel_true_x,imu_accel_meas_x,imu_gyro_true_x,imu_gyro_meas_x,seeker_los_true,seeker_los_meas` |
 
 All four files share the `t` column (same length, same timestamps).
