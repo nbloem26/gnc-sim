@@ -33,7 +33,9 @@ endif()
 
 if(GNCSIM_COVERAGE AND NOT EMSCRIPTEN)
   message(STATUS "gnc-sim: enabling gcov coverage instrumentation")
-  add_compile_options(--coverage -O0 -g)
+  # -fprofile-update=atomic makes gcov counters thread-safe so parallel Monte Carlo
+  # (#43) doesn't corrupt .gcda files (negative-hit gcov parse errors). See gcc PR68080.
+  add_compile_options(--coverage -O0 -g -fprofile-update=atomic)
   add_link_options(--coverage)
 endif()
 
