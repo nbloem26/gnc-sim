@@ -1,5 +1,9 @@
-// gnc-sim — environment models: gravity + US Standard Atmosphere 1976.
-// Phase 1 (env) owns the implementations in core/src/env/.
+/// @file Environment.hpp
+/// @brief Environment models — gravity + US Standard Atmosphere 1976.
+///
+/// Phase 1 (env) owns the implementations in core/src/env/. See docs/THEORY.md §3 for the
+/// gravity falloff and the USSA76 layer equations; round-Earth / hi-fi gravity live in
+/// Frames.hpp / EnvFidelity.hpp.
 #pragma once
 
 #include "gncsim/core/Config.hpp"
@@ -7,8 +11,11 @@
 
 namespace gncsim {
 
-// Local-vertical gravity. Returns acceleration [m/s^2] (negative-Up). Optionally falls off with
-// altitude (inverse-square about Earth radius) when EnvConfig.altitude_dependent_g is set.
+/// @brief Local-vertical gravity model (flat-Earth).
+///
+/// `acceleration()` returns the gravitational acceleration [m/s²] (negative-Up). Optionally
+/// falls off with altitude (inverse-square about the Earth radius) when
+/// `EnvConfig.altitude_dependent_g` is set.
 class GravityModel {
  public:
   explicit GravityModel(const EnvConfig& cfg) : cfg_(cfg) {}
@@ -18,7 +25,7 @@ class GravityModel {
   EnvConfig cfg_;
 };
 
-// US Standard Atmosphere 1976 sample at geometric altitude (valid 0..86 km; clamps outside).
+/// @brief A US Standard Atmosphere 1976 sample (density, pressure, temperature, speed of sound).
 struct AtmSample {
   double density = 0.0;         // [kg/m^3]
   double pressure = 0.0;        // [Pa]
@@ -26,6 +33,8 @@ struct AtmSample {
   double speed_of_sound = 0.0;  // [m/s]
 };
 
+/// @brief US Standard Atmosphere 1976 at geometric altitude (valid 0..86 km; clamps outside).
+/// @param altitude_m Geometric altitude [m].
 AtmSample atmosphereUSSA76(double altitude_m);
 
 }  // namespace gncsim

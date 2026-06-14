@@ -1,3 +1,10 @@
+/// @file Registry.hpp
+/// @brief Model registry (issue #31) — resolves config strings to concrete model implementations.
+///
+/// The single place that knows which string selects which model, so the Runner is thin
+/// orchestration and trade studies are config sweeps. The shipped model set documented here is
+/// the canonical list covered by docs/MODELS.md, docs/VNV_MATRIX.md and docs/THEORY.md.
+//
 // gnc-sim — model registry (issue #31). Resolves config strings to concrete model implementations
 // behind the interfaces in Interfaces.hpp. This is the single place that knows which string selects
 // which model, so the Runner is thin orchestration and trade studies are config sweeps.
@@ -25,8 +32,10 @@
 
 namespace gncsim {
 
-// Stateless resolver from SimConfig sub-blocks + config strings to concrete models. Each factory
-// builds a fresh model adapter wrapping the existing numerics. Construct one per run (cheap).
+/// @brief Stateless resolver from SimConfig sub-blocks + config strings to concrete models.
+///
+/// Each factory builds a fresh model adapter wrapping the existing numerics. Construct one per
+/// run (cheap).
 class ModelRegistry {
  public:
   ModelRegistry() = default;

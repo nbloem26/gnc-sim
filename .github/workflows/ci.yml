@@ -261,3 +261,24 @@ jobs:
         with:
           name: vnv-report
           path: VNV_REPORT.md
+  # --- Docs (issue #52). ADDITIVE: builds the C++ API reference from the Doxygen comments on the
+  # public headers and fails on malformed doc syntax. Touches no build/test output. ---
+  docs:
+    name: API docs (Doxygen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+      - name: Build C++ API docs (fail on doc-comment errors)
+        # WARN_AS_ERROR=FAIL_ON_WARNINGS turns malformed Doxygen comments into a failing build;
+        # the Doxyfile itself keeps it off so a local `doxygen docs/Doxyfile` still emits output.
+        run: |
+          cp docs/Doxyfile docs/Doxyfile.ci
+          echo 'WARN_AS_ERROR=FAIL_ON_WARNINGS' >> docs/Doxyfile.ci
+          doxygen docs/Doxyfile.ci
+      - name: Upload API docs
+        uses: actions/upload-artifact@v5
+        with:
+          name: api-docs-html
+          path: docs/api/html

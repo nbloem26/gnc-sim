@@ -1,7 +1,10 @@
-// gnc-sim — Guidance, Navigation & Control. Phase 1 (gnc) owns core/src/gnc/.
-//   Guidance:  Proportional Navigation -> commanded acceleration.
-//   Navigation: alpha-beta estimator turning noisy seeker/IMU into a relative-state estimate.
-//   Control:   6DOF acceleration autopilot -> body moment / fin deflection.
+/// @file Gnc.hpp
+/// @brief Guidance, Navigation & Control entry points.
+///
+/// Phase 1 (gnc) owns core/src/gnc/. Guidance: Proportional Navigation / APN / ZEM-ZEV →
+/// commanded acceleration. Navigation: alpha-beta estimator (EKF/IMM live in Ekf.hpp/Imm.hpp).
+/// Control: 6DOF acceleration autopilot → body moment / fin deflection. Governing equations:
+/// docs/THEORY.md §6–§7.
 #pragma once
 
 #include "gncsim/core/Config.hpp"
@@ -10,7 +13,7 @@
 
 namespace gncsim {
 
-// Relative engagement geometry between vehicle and target (world frame).
+/// @brief Relative engagement geometry between vehicle and target (world frame).
 struct Engagement {
   Vector3 rel_pos;         // target - vehicle [m]
   Vector3 rel_vel;         // target_vel - vehicle_vel [m/s]
@@ -22,9 +25,11 @@ struct Engagement {
   double los_rate = 0.0;   // |los_rate_vec| [rad/s]
 };
 
+/// @brief Compute the relative engagement geometry (LOS, LOS rate, closing speed) for guidance.
 Engagement computeEngagement(const EntityState& vehicle, const EntityState& target);
 
-// Proportional Navigation: a_cmd = N * Vc * (LOS_unit x los_rate_vec), magnitude-limited.
+/// @brief Proportional Navigation command @f$a_{cmd}=N\,V_c\,(\hat u_{LOS}\times\Omega)@f$,
+/// magnitude-limited (the `pronav` law). See docs/THEORY.md §7.1.
 Vector3 proNavCommand(const Engagement& e, const GuidanceConfig& cfg);
 
 // Augmented Proportional Navigation: PN plus a target-acceleration feedforward.

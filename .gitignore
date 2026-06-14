@@ -4,6 +4,10 @@
 /build-wasm/
 /build-python/
 *.o
+
+# Generated Doxygen API reference (rebuilt by `doxygen docs/Doxyfile` / the CI docs job)
+/docs/api/
+/docs/Doxyfile.ci
 *.a
 *.obj
 # Python SDK (issue #32): the compiled pybind11 extension is a build product (CMake drops it into

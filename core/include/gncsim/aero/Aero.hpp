@@ -1,5 +1,8 @@
-// gnc-sim — aerodynamics: Mach-dependent drag, plus 6DOF normal force from angle of attack.
-// Phase 1 (aero) owns the implementations in core/src/aero/.
+/// @file Aero.hpp
+/// @brief Aerodynamics — Mach-dependent drag, plus 6DOF normal force/moment from angle of attack.
+///
+/// Phase 1 (aero) owns the implementations in core/src/aero/. See docs/THEORY.md §4 for the
+/// drag force @f$-\tfrac12\rho V^2 C_d(M) A\,\hat v@f$ and the normal-force term.
 #pragma once
 
 #include "gncsim/core/Config.hpp"
@@ -9,6 +12,7 @@
 
 namespace gncsim {
 
+/// @brief Aerodynamic force/moment model driven by the AeroConfig drag polar and Cn/Cm tables.
 class AeroModel {
  public:
   explicit AeroModel(const AeroConfig& cfg) : cfg_(cfg) {}

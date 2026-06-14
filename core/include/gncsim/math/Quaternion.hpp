@@ -1,5 +1,9 @@
-// gnc-sim — unit quaternion for 6DOF attitude. Hamilton convention, scalar-first (w,x,y,z).
-// Rotates a vector from body frame to world (ENU) frame via rotate().
+/// @file Quaternion.hpp
+/// @brief Unit quaternion for 6DOF attitude.
+///
+/// Hamilton convention, scalar-first @f$(w,x,y,z)@f$. `rotate()` maps a vector from the
+/// body frame to the world (ENU) frame. Attitude kinematics @f$\dot q = \tfrac12 q\otimes\omega@f$;
+/// see docs/THEORY.md §1.
 #pragma once
 
 #include <cmath>
@@ -8,6 +12,7 @@
 
 namespace gncsim {
 
+/// @brief Scalar-first unit quaternion @f$(w,x,y,z)@f$ rotating body→world (ENU).
 struct Quaternion {
   double w = 1.0;
   double x = 0.0;

@@ -1,6 +1,9 @@
-// gnc-sim — sensor error models. Reproduce, in-sim, the error characteristics recovered from the
-// Allan-variance analysis (configs/sensor_params.json): white noise + Gauss-Markov bias
-// instability + rate random walk + scale factor. Phase 1 (sensors) owns core/src/sensors/.
+/// @file Sensors.hpp
+/// @brief Sensor error models (IMU + seeker).
+///
+/// Reproduces in-sim the error characteristics recovered from the Allan-variance analysis
+/// (configs/sensor_params.json): white noise + Gauss-Markov bias instability + rate random
+/// walk + scale factor. Phase 1 (sensors) owns core/src/sensors/. See docs/THEORY.md §5.1.
 #pragma once
 
 #include "gncsim/core/Config.hpp"
@@ -9,8 +12,10 @@
 
 namespace gncsim {
 
-// Strapdown IMU: corrupts true specific force and angular rate. Holds the slowly-varying bias
-// state between calls (first-order Gauss-Markov + random walk), so construct once per run.
+/// @brief Strapdown IMU — corrupts true specific force and angular rate.
+///
+/// Holds the slowly-varying bias state between calls (first-order Gauss-Markov + random walk),
+/// so construct once per run.
 class Imu {
  public:
   Imu(const ImuNoise& cfg, double dt, Rng& rng) : cfg_(cfg), dt_(dt), rng_(rng) {}
