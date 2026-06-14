@@ -347,8 +347,183 @@ def ishigami_analytic_indices(a: float = 7.0, b: float = 0.1) -> tuple[np.ndarra
 
 
 # --------------------------------------------------------------------------------------
+# Trajectory uncertainty propagation (issue #49)
+#
+# The CI / Sobol tools above summarize the *terminal* output (miss). This propagates the
+# dispersion across the *whole engagement*: given an ensemble of per-case trajectories
+# (each a time series sampled on a common grid), it returns per-time percentile bands so
+# the state's uncertainty growth/collapse is visible over the flight, not just at CPA.
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DispersionBand:
+    """Per-time uncertainty band for one scalar channel across a Monte-Carlo ensemble.
+
+    Attributes:
+        t_s: common time grid [s], shape ``(T,)``.
+        mean: ensemble mean per time, shape ``(T,)``.
+        std: ensemble std (ddof=1) per time, shape ``(T,)``.
+        low: lower percentile envelope per time, shape ``(T,)``.
+        high: upper percentile envelope per time, shape ``(T,)``.
+        median: ensemble median per time, shape ``(T,)``.
+        level: the central coverage of ``[low, high]`` (e.g. 0.90).
+        n: number of ensemble members.
+    """
+
+    t_s: np.ndarray
+    mean: np.ndarray
+    std: np.ndarray
+    low: np.ndarray
+    high: np.ndarray
+    median: np.ndarray
+    level: float
+    n: int
+
+    @property
+    def peak_std(self) -> float:
+        """The largest per-time std over the flight — the worst-case dispersion."""
+        return float(np.max(self.std)) if self.std.size else float("nan")
+
+    @property
+    def terminal_std(self) -> float:
+        """The dispersion at the final time sample (collapses toward CPA)."""
+        return float(self.std[-1]) if self.std.size else float("nan")
+
+
+def trajectory_band(
+    t_s: Sequence[float] | np.ndarray,
+    ensemble: Sequence[Sequence[float]] | np.ndarray,
+    *,
+    level: float = 0.90,
+) -> DispersionBand:
+    """Per-time dispersion band for one channel over a Monte-Carlo ensemble.
+
+    Args:
+        t_s: common time grid, shape ``(T,)``.
+        ensemble: stacked per-case series, shape ``(N, T)`` — row ``i`` is case ``i``'s
+            channel sampled on ``t_s``. Cases must already share the grid (resample
+            upstream with :func:`resample_to_grid` if they don't).
+        level: central coverage for the ``[low, high]`` envelope (0.90 -> 5th/95th pct).
+
+    Returns:
+        A :class:`DispersionBand`. The mean/median trend with a percentile envelope is
+        the trajectory analogue of the terminal CEP/Pk CI: it shows where in the flight
+        the state is most uncertain.
+
+    Deterministic: pure reductions over the ensemble, no RNG.
+    """
+    grid = np.asarray(t_s, dtype=float)
+    arr = np.asarray(ensemble, dtype=float)
+    if arr.ndim != 2:
+        raise ValueError("ensemble must be 2-D (N cases x T samples)")
+    if arr.shape[1] != grid.size:
+        raise ValueError(f"ensemble width {arr.shape[1]} != len(t_s) {grid.size}")
+    if arr.shape[0] == 0:
+        raise ValueError("trajectory_band: empty ensemble")
+
+    alpha = 1.0 - level
+    lo_pct = 100.0 * alpha / 2.0
+    hi_pct = 100.0 * (1.0 - alpha / 2.0)
+    n = arr.shape[0]
+    return DispersionBand(
+        t_s=grid,
+        mean=np.mean(arr, axis=0),
+        std=(np.std(arr, axis=0, ddof=1) if n > 1 else np.zeros(grid.size)),
+        low=np.percentile(arr, lo_pct, axis=0),
+        high=np.percentile(arr, hi_pct, axis=0),
+        median=np.median(arr, axis=0),
+        level=float(level),
+        n=int(n),
+    )
+
+
+def resample_to_grid(
+    t_s: Sequence[float] | np.ndarray,
+    values: Sequence[float] | np.ndarray,
+    grid_s: Sequence[float] | np.ndarray,
+) -> np.ndarray:
+    """Linearly resample one case's ``(t_s, values)`` series onto a common ``grid_s``.
+
+    Monte-Carlo cases terminate at different times / step counts; to stack them into an
+    ``(N, T)`` ensemble for :func:`trajectory_band` they must share a grid. Times in
+    ``grid_s`` beyond a case's last sample are held at its final value (the case has
+    ended — e.g. post-CPA), so the band reflects "still flying" vs "done".
+    """
+    tt = np.asarray(t_s, dtype=float)
+    vv = np.asarray(values, dtype=float)
+    g = np.asarray(grid_s, dtype=float)
+    if tt.size == 0:
+        raise ValueError("resample_to_grid: empty source series")
+    # np.interp holds endpoints for out-of-range queries (left=vv[0], right=vv[-1]).
+    return np.interp(g, tt, vv)
+
+
+def common_time_grid(
+    series_t: Sequence[Sequence[float] | np.ndarray], *, n_points: int = 200
+) -> np.ndarray:
+    """A shared time grid spanning ``[0, min last-time]`` across cases, ``n_points`` long.
+
+    Uses the *shortest* case's end time as the grid's upper bound so every case has real
+    (non-extrapolated) data over the whole grid — the band then reflects only genuine
+    dispersion, not extrapolation artifacts.
+    """
+    last_times = [float(np.asarray(t, dtype=float)[-1]) for t in series_t if len(t) > 0]
+    if not last_times:
+        raise ValueError("common_time_grid: no non-empty series")
+    t_end = min(last_times)
+    return np.linspace(0.0, t_end, n_points)
+
+
+def ensemble_band(
+    cases: Sequence[tuple[Sequence[float] | np.ndarray, Sequence[float] | np.ndarray]],
+    *,
+    level: float = 0.90,
+    n_points: int = 200,
+) -> DispersionBand:
+    """End-to-end: resample a list of ``(t_s, values)`` cases to a shared grid and band them.
+
+    Convenience wrapper combining :func:`common_time_grid`, :func:`resample_to_grid` and
+    :func:`trajectory_band` — the typical entry point when each Monte-Carlo case is a raw
+    ``(t, channel)`` pair of differing length. Deterministic.
+    """
+    if not cases:
+        raise ValueError("ensemble_band: no cases")
+    grid = common_time_grid([t for t, _ in cases], n_points=n_points)
+    stacked = np.vstack([resample_to_grid(t, v, grid) for t, v in cases])
+    return trajectory_band(grid, stacked, level=level)
+
+
+# --------------------------------------------------------------------------------------
 # Figures
 # --------------------------------------------------------------------------------------
+
+
+def plot_trajectory_band(band: DispersionBand, *, channel_label: str = "miss range [m]"):
+    """Per-time mean trajectory with a shaded percentile dispersion band."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.fill_between(
+        band.t_s,
+        band.low,
+        band.high,
+        color="#2ca02c",
+        alpha=0.20,
+        label=f"{band.level:.0%} band",
+    )
+    ax.plot(band.t_s, band.mean, "-", color="#2ca02c", lw=1.8, label="ensemble mean")
+    ax.plot(band.t_s, band.median, "--", color="#1f77b4", lw=1.2, label="ensemble median")
+    ax.set_xlabel("time [s]")
+    ax.set_ylabel(channel_label)
+    ax.set_title(f"Trajectory dispersion of {channel_label} ({band.n} cases)")
+    ax.grid(True, ls="--", alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    return fig
 
 
 def plot_convergence(points: list[ConvergencePoint], *, metric_label: str = "CEP [m]"):

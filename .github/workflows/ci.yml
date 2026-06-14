@@ -237,3 +237,27 @@ jobs:
         run: |
           # Short, time-boxed run: replay the corpus + mutate for 60s. A crash artifact fails the job.
           ./build-fuzz/fuzz/config_fuzzer -max_total_time=60 -timeout=10 fuzz/corpus
+
+  vnv-report:
+    name: V&V credibility report (NASA-STD-7009)
+    runs-on: ubuntu-latest
+    # ADDITIVE (issue #49): pure-Python — no native build. Scores every shipped model on
+    # the NASA-STD-7009 credibility factors and emits the V&V report as a build artifact
+    # to attach per release. Deterministic (seeded); the report tests run here too.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install Python deps
+        run: pip install numpy scipy pandas pytest
+      - name: Credibility + report tests
+        run: python -m pytest postproc/tests/test_credibility.py -q
+      - name: V&V-matrix consistency
+        run: cd postproc && python -m gncpost.vnv
+      - name: Generate V&V / credibility report
+        run: cd postproc && python -m gncpost.vnv_report --out "$GITHUB_WORKSPACE/VNV_REPORT.md"
+      - name: Upload V&V report
+        uses: actions/upload-artifact@v5
+        with:
+          name: vnv-report
+          path: VNV_REPORT.md
