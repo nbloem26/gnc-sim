@@ -334,6 +334,12 @@ SimResult runRoundEarth(const SimConfig& cfg) {
   double best_t = 0.0;
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
+  // Reserve the telemetry buffer up front: the loop emits exactly one frame per step (plus the
+  // i==0 row), so the final size is known. This removes the geometric reallocations the growing
+  // vector would otherwise incur and is purely an allocation change — every recorded value is
+  // bit-identical. (steps+1 covers i in [0, steps]; early ground-impact termination only shrinks
+  // it.)
+  r.frames.reserve(static_cast<std::size_t>(steps) + 1);
   for (int i = 0; i <= steps; ++i) {
     const double t = i * cfg.dt;
 
@@ -520,6 +526,9 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
   double best_t = 0.0;
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
+  // Reserve the telemetry buffer up front (one frame per step; see runRoundEarth). Allocation-only
+  // change — recorded values are bit-identical.
+  r.frames.reserve(static_cast<std::size_t>(steps) + 1);
   for (int i = 0; i <= steps; ++i) {
     const double t = i * cfg.dt;
 
@@ -780,6 +789,20 @@ SimResult runSimulation(const SimConfig& cfg) {
   bool staged = false;  // ensures the staging mass drop happens exactly once
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
+  // Reserve the telemetry buffer up front: the loop pushes exactly one frame per step (plus the
+  // i==0 row), so its final length is bounded by steps+1. Reserving removes the geometric
+  // reallocations that growing `frames` would otherwise trigger every few hundred steps. This is a
+  // pure allocation change — no recorded value moves a single bit. Early terminal-condition breaks
+  // only make the run shorter, never longer, so the reservation is always an upper bound.
+  r.frames.reserve(static_cast<std::size_t>(steps) + 1);
+
+  // Scratch buffer for the per-step decoy feature measurements (issue #6). Hoisted out of the loop
+  // so its backing storage is allocated ONCE and reused (cleared, not freed) each step instead of a
+  // fresh heap allocation per step. Only touched on the opt-in decoy path; the RNG draw order and
+  // every pushed value are unchanged, so results stay bit-identical.
+  std::vector<FeatureVec> decoy_z;
+  if (use_decoys) decoy_z.reserve(scene.size());
+
   for (int i = 0; i <= steps; ++i) {
     const double t = i * cfg.dt;
 
@@ -809,8 +832,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     bool discrim_correct = true;
     double discrim_margin = 0.0;
     if (use_decoys) {
-      std::vector<FeatureVec> z;
-      z.reserve(scene.size());
+      std::vector<FeatureVec>& z = decoy_z;
+      z.clear();  // reuse the hoisted backing storage (capacity retained across steps)
       for (const auto& obj : scene) {
         z.push_back({obj.signature[0] + rng.gaussian(0.0, cfg.decoys.measurement_noise),
                      obj.signature[1] + rng.gaussian(0.0, cfg.decoys.measurement_noise),
