@@ -66,4 +66,35 @@ class Autopilot {
   ControlConfig cfg_;
 };
 
+// First-order fin actuator with rate + deflection limits (issue #35). Models the lag between a
+// commanded body-axis deflection and the realized one. Per axis the deflection follows the command
+// through a first-order lag (time constant tau); the per-step change is rate-limited to
+// rate_limit*dt and the absolute deflection clamped to deflection_limit. State is the current
+// realized deflection [rad] per body axis (x=roll, y=pitch, z=yaw).
+//
+// Control allocation: the autopilot's commanded body MOMENT is converted to a commanded deflection
+// by dividing by the control effectiveness (moment per unit deflection); the realized deflection,
+// after the lag/limits, is converted back to the realized control moment. This makes the actuator
+// dynamics the dominant lag in the terminal loop, as on a real airframe.
+class FinActuator {
+ public:
+  explicit FinActuator(const ActuatorConfig& cfg, double dt) : cfg_(cfg), dt_(dt) {}
+
+  // Advance the actuators one step toward `deflection_cmd` [rad]; returns the realized deflection.
+  Vector3 step(const Vector3& deflection_cmd);
+
+  // Map a commanded body moment [N*m] to a commanded deflection [rad] via the effectiveness gain.
+  Vector3 allocate(const Vector3& moment_cmd) const;
+
+  // The control moment [N*m] produced by a realized deflection (the allocation inverse).
+  Vector3 controlMoment(const Vector3& deflection) const;
+
+  Vector3 deflection() const { return defl_; }
+
+ private:
+  ActuatorConfig cfg_;
+  double dt_;
+  Vector3 defl_;  // current realized deflection per body axis [rad]
+};
+
 }  // namespace gncsim

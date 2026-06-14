@@ -11,6 +11,7 @@
 #include <stdexcept>
 
 #include "gncsim/dynamics/Dynamics.hpp"
+#include "gncsim/dynamics/Dynamics6dofHiFi.hpp"
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
@@ -174,6 +175,26 @@ class Dynamics6dof final : public IDynamics {
   Integrator integ_;
 };
 
+// High-fidelity 6DOF (issue #35): full inertia tensor + gyroscopic coupling in the rotational EOM.
+// The aero-moment tables and actuator dynamics live in the Runner's force/moment block (they need
+// per-step atmosphere + autopilot state); this adapter owns the inertia tensor and the coupled
+// integration. moment_body is the total body torque (aero restoring/damping + control) assembled by
+// the Runner.
+class Dynamics6dofHiFi final : public IDynamics {
+ public:
+  Dynamics6dofHiFi(const InertiaTensor& inertia, Integrator integ)
+      : inertia_(inertia), integ_(integ) {}
+  EntityState step(const EntityState& s, const Vector3& force_world, const Vector3& moment_body,
+                   const Vector3& gravity, double dt) const override {
+    return step6dofHiFi(s, force_world, moment_body, inertia_, gravity, dt, integ_);
+  }
+  bool is6dof() const override { return true; }
+
+ private:
+  InertiaTensor inertia_;
+  Integrator integ_;
+};
+
 // =============================================================================================
 // Environment adapter
 // =============================================================================================
@@ -268,6 +289,9 @@ std::unique_ptr<IDynamics> ModelRegistry::makeDynamics(const std::string& model,
                                                        Integrator integ) const {
   if (model == "3dof") return std::make_unique<Dynamics3dof>(integ);
   if (model == "6dof") return std::make_unique<Dynamics6dof>(vehicle.inertia, integ);
+  if (model == "6dof_hifi") {
+    return std::make_unique<Dynamics6dofHiFi>(inertiaFromVehicle(vehicle), integ);
+  }
   throw std::invalid_argument("ModelRegistry: unknown model '" + model + "'");
 }
 

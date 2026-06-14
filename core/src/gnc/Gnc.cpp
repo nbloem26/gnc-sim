@@ -146,4 +146,38 @@ Vector3 Autopilot::moment(const EntityState& s, const Vector3& accel_cmd_world,
   return moment;
 }
 
+// ── Control: first-order fin actuator with rate / deflection limits (issue #35) ──────────────
+Vector3 FinActuator::allocate(const Vector3& moment_cmd) const {
+  const double k = cfg_.effectiveness;
+  if (k <= 0.0) return Vector3{};
+  // Commanded deflection = moment / effectiveness, clamped to the mechanical travel limit.
+  return clampVec(moment_cmd / k, cfg_.deflection_limit);
+}
+
+Vector3 FinActuator::controlMoment(const Vector3& deflection) const {
+  return deflection * cfg_.effectiveness;
+}
+
+Vector3 FinActuator::step(const Vector3& deflection_cmd) {
+  const Vector3 cmd = clampVec(deflection_cmd, cfg_.deflection_limit);
+
+  // First-order lag toward the command: blend = dt/tau (clamped to 1 for tau <= dt).
+  const double blend = cfg_.tau > 0.0 ? std::min(dt_ / cfg_.tau, 1.0) : 1.0;
+  Vector3 target = defl_ + (cmd - defl_) * blend;
+
+  // Per-axis change after the lag, then rate-limited to rate_limit*dt and travel-clamped.
+  const double max_step = cfg_.rate_limit * dt_;
+  const auto advance = [&](double cur, double tgt) -> double {
+    double d = tgt - cur;
+    if (d > max_step) d = max_step;
+    if (d < -max_step) d = -max_step;
+    double next = cur + d;
+    if (next > cfg_.deflection_limit) next = cfg_.deflection_limit;
+    if (next < -cfg_.deflection_limit) next = -cfg_.deflection_limit;
+    return next;
+  };
+  defl_ = {advance(defl_.x, target.x), advance(defl_.y, target.y), advance(defl_.z, target.z)};
+  return defl_;
+}
+
 }  // namespace gncsim
