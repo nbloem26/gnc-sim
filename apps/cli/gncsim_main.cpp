@@ -30,9 +30,12 @@ void writeFile(const std::string& path, const std::string& content) {
   out << content;
 }
 
-// Minimal `mkdir -p` without <filesystem> coupling concerns on the CLI side.
+// Minimal `mkdir -p` without <filesystem> coupling concerns on the CLI side. This is offline
+// developer tooling (not the pure core, never WASM), so shelling out to `mkdir` is acceptable here.
+// NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe): trusted CLI-side path only.
 void ensureDir(const std::string& dir) {
-  std::string cmd = "mkdir -p '" + dir + "'";
+  const std::string cmd = "mkdir -p '" + dir + "'";
+  // NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe): offline CLI tooling.
   if (std::system(cmd.c_str()) != 0) throw std::runtime_error("cannot create dir: " + dir);
 }
 
