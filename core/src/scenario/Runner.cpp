@@ -19,6 +19,7 @@
 #include "gncsim/core/Rng.hpp"
 #include "gncsim/dynamics/Dynamics.hpp"
 #include "gncsim/dynamics/Dynamics6dofHiFi.hpp"
+#include "gncsim/env/EnvFidelity.hpp"
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/env/Frames.hpp"
 #include "gncsim/gnc/Discriminator.hpp"
@@ -204,6 +205,22 @@ SimResult runRoundEarth(const SimConfig& cfg) {
   const GeodeticOrigin& origin = cfg.origin;
   const bool with_j2 = cfg.env.j2;
 
+  // --- High-fidelity environment selectors (issue #41). At defaults these reproduce the legacy
+  // round path exactly: gravFn == centralGravity(r, with_j2), atmFn == atmosphereUSSA76, no wind.
+  const bool use_egm = (cfg.env.gravity_model == "egm");
+  GravityFidelityConfig grav_cfg = cfg.env.gravity;
+  // Honour the legacy env.j2 flag as the J2 toggle for the EGM model too (so "egm" with no explicit
+  // zonal block but env.j2=true still includes J2).
+  grav_cfg.include_j2 = grav_cfg.include_j2 || with_j2;
+  auto gravFn = [&](const Vector3& r) -> Vector3 {
+    return use_egm ? egmGravity(r, grav_cfg) : centralGravity(r, with_j2);
+  };
+  const bool use_ext_atm = (cfg.env.atmosphere_model == "extended");
+  auto atmFn = [&](double alt) -> AtmSample {
+    return use_ext_atm ? atmosphereExtended(alt) : atmosphereUSSA76(alt);
+  };
+  const WindConfig& wind = cfg.env.wind;
+
   // --- Initial states: ENU (about origin) -> ECEF -> ECI. ---
   // Position: ENU point -> ECEF point -> ECI (coincident at t=0, so ECI == ECEF here).
   const Vector3 veh_enu0 = cfg.vehicle.pos0;
@@ -248,9 +265,15 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     double lat, lon, alt;
     ecefToGeodetic(veh_ecef, lat, lon, alt);
 
-    const AtmSample atm =
-        cfg.env.atmosphere ? atmosphereUSSA76(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
-    const double airspeed = veh_vel_ecef_now.norm();
+    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    // Air-relative velocity in ECEF: the atmosphere co-rotates with Earth (= ECEF velocity), with
+    // an optional parameterized wind in local ENU rotated into ECEF and subtracted off.
+    Vector3 air_vel_ecef = veh_vel_ecef_now;
+    if (wind.enabled) {
+      const Vector3 wind_ecef = enuVecToEcef(windEnu(alt, wind), origin);
+      air_vel_ecef = veh_vel_ecef_now - wind_ecef;
+    }
+    const double airspeed = air_vel_ecef.norm();
     const double mach = atm.speed_of_sound > 0.0 ? airspeed / atm.speed_of_sound : 0.0;
 
     // --- ENU telemetry + engagement geometry (frame-agnostic relative state). ---
@@ -301,10 +324,11 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     if (alt < 0.0 && t > 0.0) break;
 
     // --- Forces in ECI: central gravity + drag (drag built in ECEF, rotated into ECI). ---
-    const Vector3 g_eci = centralGravity(veh_r, with_j2);
+    const Vector3 g_eci = gravFn(veh_r);
     Vector3 drag_eci{};
     if (cfg.env.atmosphere) {
-      const Vector3 drag_ecef = aero.dragForce(veh_vel_ecef_now, atm);
+      // Drag opposes the AIR-relative velocity (co-rotating atmosphere + optional wind).
+      const Vector3 drag_ecef = aero.dragForce(air_vel_ecef, atm);
       // Drag is a force vector in ECEF; rotate (no transport term — it's an instantaneous force).
       drag_eci = ecefToEci(drag_ecef, t);
     }
@@ -318,7 +342,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     veh_v = veh_next.vel;
 
     // --- Target: ballistic under the same central gravity (no thrust, no drag for simplicity). ---
-    const Vector3 tgt_g = centralGravity(tgt_r, with_j2);
+    const Vector3 tgt_g = gravFn(tgt_r);
     EntityState tgt_state;
     tgt_state.pos = tgt_r;
     tgt_state.vel = tgt_v;
@@ -334,13 +358,165 @@ SimResult runRoundEarth(const SimConfig& cfg) {
   return r;
 }
 
+// =============================================================================================
+// Rotating-ECEF propagation (cfg.env.frame == "round" && cfg.env.rotating_ecef)
+// =============================================================================================
+//
+// Alternative formulation to runRoundEarth's ECI integration. Here the translational state is
+// integrated directly in the rotating ECEF frame, so the equations of motion carry the fictitious
+// Coriolis (-2 omega x v) and centrifugal (-omega x (omega x r)) accelerations explicitly:
+//
+//   a_ecef = g(r) - 2 omega x v_ecef - omega x (omega x r) + F_drag/m,   omega = [0,0,kOmega].
+//
+// Physically this is EQUIVALENT to the ECI path: a special case with omega = 0 (non-rotating Earth)
+// makes ECEF == ECI and the two paths agree to integrator precision (asserted in the tests).
+// Because the fictitious accelerations are state-dependent, this path uses its own RK4 (the shared
+// step3dof holds force constant across a step), evaluating gravity + fictitious + drag at every RK
+// stage. Uses NO RNG draws (deterministic, parity-preserving).
+SimResult runRoundEarthEcef(const SimConfig& cfg) {
+  SimResult r;
+  r.scenario = cfg.scenario;
+  r.model = cfg.model;
+  r.seed = cfg.seed;
+  r.dt = cfg.dt;
+  r.t_end = cfg.t_end;
+  r.origin = cfg.origin;
+
+  const GeodeticOrigin& origin = cfg.origin;
+  const Vector3 omega{0.0, 0.0, wgs84::kOmega};
+
+  // Environment selectors (same opt-in semantics as the ECI path).
+  const bool use_egm = (cfg.env.gravity_model == "egm");
+  GravityFidelityConfig grav_cfg = cfg.env.gravity;
+  grav_cfg.include_j2 = grav_cfg.include_j2 || cfg.env.j2;
+  auto gravFn = [&](const Vector3& r_ecef) -> Vector3 {
+    return use_egm ? egmGravity(r_ecef, grav_cfg) : centralGravity(r_ecef, cfg.env.j2);
+  };
+  const bool use_ext_atm = (cfg.env.atmosphere_model == "extended");
+  auto atmFn = [&](double alt) -> AtmSample {
+    return use_ext_atm ? atmosphereExtended(alt) : atmosphereUSSA76(alt);
+  };
+  const WindConfig& wind = cfg.env.wind;
+
+  AeroModel aero(cfg.aero);
+
+  // ECEF state = (pos, vel). At t = 0 ECEF == ECI, so initial ECEF velocity is the launch velocity
+  // expressed in ECEF (co-rotating); NO omega x r transport term is added here — the rotating-frame
+  // velocity IS the ENU-derived ECEF velocity.
+  struct State2 {
+    Vector3 pos, vel;
+    State2 operator+(const State2& o) const { return {pos + o.pos, vel + o.vel}; }
+    State2 operator*(double s) const { return {pos * s, vel * s}; }
+  };
+
+  State2 veh{enuToEcef(cfg.vehicle.pos0, origin),
+             enuVecToEcef(launchVelocity(cfg.vehicle), origin)};
+  State2 tgt{enuToEcef(cfg.target.pos0, origin), enuVecToEcef(cfg.target.vel0, origin)};
+  double veh_mass = cfg.vehicle.mass0;
+
+  // ECEF derivative: gravitation + fictitious forces (+ drag for the vehicle).
+  auto deriv = [&](const State2& y, bool with_drag) -> State2 {
+    const Vector3 coriolis = omega.cross(y.vel) * (-2.0);
+    const Vector3 centrifugal = omega.cross(omega.cross(y.pos)) * (-1.0);
+    Vector3 a = gravFn(y.pos) + coriolis + centrifugal;
+    if (with_drag && cfg.env.atmosphere) {
+      double lat, lon, alt;
+      ecefToGeodetic(y.pos, lat, lon, alt);
+      const AtmSample atm = atmFn(alt);
+      Vector3 air_vel = y.vel;  // atmosphere is stationary in ECEF (co-rotating)
+      if (wind.enabled) air_vel = y.vel - enuVecToEcef(windEnu(alt, wind), origin);
+      a += aero.dragForce(air_vel, atm) / veh_mass;
+    }
+    return {y.vel, a};
+  };
+  auto rk4 = [&](const State2& y, bool with_drag) -> State2 {
+    const double dt = cfg.dt;
+    const State2 k1 = deriv(y, with_drag);
+    const State2 k2 = deriv(y + k1 * (0.5 * dt), with_drag);
+    const State2 k3 = deriv(y + k2 * (0.5 * dt), with_drag);
+    const State2 k4 = deriv(y + k3 * dt, with_drag);
+    return y + (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (dt / 6.0);
+  };
+
+  double best_range = (tgt.pos - veh.pos).norm();
+  double best_t = 0.0;
+
+  const int steps = static_cast<int>(cfg.t_end / cfg.dt);
+  for (int i = 0; i <= steps; ++i) {
+    const double t = i * cfg.dt;
+
+    // ECEF -> ENU telemetry (no time rotation: ECEF is already Earth-fixed).
+    const Vector3 veh_pos_enu = ecefToEnu(veh.pos, origin);
+    const Vector3 veh_vel_enu = ecefVecToEnu(veh.vel, origin);
+    const Vector3 tgt_pos_enu = ecefToEnu(tgt.pos, origin);
+    const Vector3 tgt_vel_enu = ecefVecToEnu(tgt.vel, origin);
+
+    double lat, lon, alt;
+    ecefToGeodetic(veh.pos, lat, lon, alt);
+    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    Vector3 air_vel = veh.vel;
+    if (wind.enabled) air_vel = veh.vel - enuVecToEcef(windEnu(alt, wind), origin);
+    const double mach = atm.speed_of_sound > 0.0 ? air_vel.norm() / atm.speed_of_sound : 0.0;
+
+    EntityState veh_e, tgt_e;
+    veh_e.pos = veh_pos_enu;
+    veh_e.vel = veh_vel_enu;
+    tgt_e.pos = tgt_pos_enu;
+    tgt_e.vel = tgt_vel_enu;
+    const Engagement truth = computeEngagement(veh_e, tgt_e);
+
+    Frame f;
+    f.t = t;
+    f.veh_pos = veh_pos_enu;
+    f.veh_vel = veh_vel_enu;
+    f.mass = veh_mass;
+    f.mach = mach;
+    f.tgt_pos = tgt_pos_enu;
+    f.tgt_vel = tgt_vel_enu;
+    f.nav_pos_est = veh_pos_enu + truth.rel_pos;
+    f.nav_vel_est = veh_vel_enu + truth.rel_vel;
+    f.los_angle = truth.los_angle;
+    f.los_rate = truth.los_rate;
+    f.v_closing = truth.v_closing;
+    f.range = truth.range;
+    f.seeker_los_true = truth.los_angle;
+    f.seeker_los_meas = truth.los_angle;
+    r.frames.push_back(f);
+
+    // CPA over the next dt, in ECEF (relative geometry is frame-agnostic).
+    const Vector3 rel_pos = tgt.pos - veh.pos;
+    const Vector3 rel_vel = tgt.vel - veh.vel;
+    const double denom = rel_vel.normSq();
+    double s_star = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
+    if (s_star < 0.0) s_star = 0.0;
+    if (s_star > cfg.dt) s_star = cfg.dt;
+    const double cpa = (rel_pos + rel_vel * s_star).norm();
+    if (cpa < best_range) {
+      best_range = cpa;
+      best_t = t + s_star;
+    }
+
+    if (alt < 0.0 && t > 0.0) break;
+
+    veh = rk4(veh, /*with_drag=*/true);
+    tgt = rk4(tgt, /*with_drag=*/false);
+  }
+
+  r.miss_distance = best_range;
+  r.intercept_time = best_t;
+  r.intercept = best_range < kLethalRadius;
+  return r;
+}
+
 }  // namespace
 
 SimResult runSimulation(const SimConfig& cfg) {
-  // Round-Earth opt-in: dispatch to the WGS-84 / ECI propagation path. The flat-Earth code below
-  // is never reached in round mode, so the default (flat) trajectory stays byte-identical.
+  // Round-Earth opt-in: dispatch to the WGS-84 propagation path. The flat-Earth code below is never
+  // reached in round mode, so the default (flat) trajectory stays byte-identical. Within round
+  // mode, env.rotating_ecef selects the rotating-ECEF formulation (Coriolis+centrifugal) over the
+  // default ECI integration; both are physically equivalent.
   if (cfg.env.frame == "round") {
-    return runRoundEarth(cfg);
+    return cfg.env.rotating_ecef ? runRoundEarthEcef(cfg) : runRoundEarth(cfg);
   }
 
   SimResult r;
