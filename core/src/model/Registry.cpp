@@ -16,6 +16,7 @@
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/gnc/Imm.hpp"
+#include "gncsim/model/Threats.hpp"
 
 namespace gncsim {
 
@@ -319,9 +320,14 @@ std::unique_ptr<IEnvironment> ModelRegistry::makeEnvironment(const EnvConfig& en
   throw std::invalid_argument("ModelRegistry: unknown env.frame '" + env.frame + "'");
 }
 
-std::unique_ptr<IThreat> ModelRegistry::makeThreat(const TargetConfig& target) const {
+std::unique_ptr<IThreat> ModelRegistry::makeThreat(const TargetConfig& target,
+                                                   double g0_mps2) const {
   if (target.maneuver == "constant") return std::make_unique<ConstantThreat>();
   if (target.maneuver == "weave") return std::make_unique<WeaveThreat>(target);
+  // Threat suite (issue #42): gravitating multi-stage ICBM / hypersonic glide / RV+penaids.
+  if (target.maneuver == "icbm") return std::make_unique<IcbmThreat>(target.icbm, g0_mps2);
+  if (target.maneuver == "hgv") return std::make_unique<HgvThreat>(target.hgv, g0_mps2);
+  if (target.maneuver == "rv_penaids") return std::make_unique<RvPenaidsThreat>(target.rv, g0_mps2);
   throw std::invalid_argument("ModelRegistry: unknown target.maneuver '" + target.maneuver + "'");
 }
 

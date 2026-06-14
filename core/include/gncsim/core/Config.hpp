@@ -203,13 +203,67 @@ struct NavConfig {
   double imm_p_stay = 0.999;  // Markov mode self-transition probability (mode stickiness)
 };
 
+// One boosting rocket stage of a multi-stage ICBM threat (issue #42). Stages burn in order; each
+// adds thrust along the body/velocity axis for burn_time_s, drops its spent dry mass at the end of
+// its burn (staging event), then the next stage ignites. After the final stage the threat coasts
+// ballistically (gravity only) through midcourse — the characteristic high-apogee lofted arc.
+struct IcbmStage {
+  double thrust_n = 0.0;            // stage thrust [N]
+  double burn_time_s = 0.0;         // stage burn duration [s]
+  double propellant_mass_kg = 0.0;  // propellant burned linearly over burn_time_s [kg]
+  double dry_mass_kg = 0.0;         // stage structural (dry) mass dropped at staging [kg]
+};
+
+// Multi-stage boosting ICBM threat (target.maneuver == "icbm", issue #42). The threat thrusts
+// through its stage stack, drops mass at each staging event, then flies a ballistic midcourse arc
+// under gravity. Gravity is supplied by the threat itself (the flat-Earth target propagation does
+// not otherwise gravitate the target). Defaults are empty so an unconfigured icbm threat is inert.
+struct IcbmConfig {
+  std::vector<IcbmStage> stages;  // ordered boosting stages
+  double payload_mass_kg = 0.0;   // RV/payload mass carried through midcourse [kg]
+};
+
+// Hypersonic glide vehicle threat (target.maneuver == "hgv", issue #42). After a ballistic entry
+// the vehicle develops aerodynamic lift (lift-to-drag ratio ld_ratio) in the vertical plane,
+// producing the characteristic skip-glide oscillation: it pulls up out of the dense atmosphere,
+// arcs over, re-enters, and skips again. Lift acts perpendicular to velocity in the vertical plane;
+// drag opposes velocity. A crude exponential atmosphere drives the aero so the threat is fully
+// self-contained (no dependence on the interceptor-side aero/atmosphere blocks).
+struct HgvConfig {
+  double ld_ratio = 2.5;            // lift-to-drag ratio L/D (dimensionless)
+  double ballistic_coeff = 4000.0;  // ballistic coefficient m/(Cd*A) [kg/m^2] (drag scaling)
+  double rho0_kgpm3 = 1.225;        // sea-level air density [kg/m^3]
+  double scale_height_m = 7200.0;   // exponential-atmosphere scale height [m]
+  double pull_up_alt_m = 40000.0;   // altitude below which lift switches on (glide regime) [m]
+};
+
+// Reentry-vehicle-with-penaids threat (target.maneuver == "rv_penaids", issue #42). The true RV is
+// ballistic (gravity only). At deploy_time_s a bus dispenses penaids/decoys as a kinematic spread
+// about the RV; the penaids are scored against the true RV by the discrimination stack. The threat
+// itself only governs the RV's acceleration (ballistic); penaid kinematics + scoring live in the
+// RvPenaids helper so they feed issue #6's discriminator. Defaults: no penaids (inert beyond the
+// ballistic RV).
+struct RvPenaidsConfig {
+  int penaid_count = 0;            // number of penaids/decoys dispensed
+  double deploy_time_s = 0.0;      // bus dispense time [s]
+  double deploy_dv_mps = 5.0;      // characteristic dispense delta-v spread [m/s]
+  double penaid_decel_mps2 = 0.5;  // extra atmospheric deceleration penaids shed (lighter) [m/s^2]
+};
+
 struct TargetConfig {
   Vector3 pos0{8000.0, 0.0, 3000.0};
   Vector3 vel0{-250.0, 0.0, 0.0};
-  std::string maneuver = "constant";  // "constant" | "weave"
-  double maneuver_g = 3.0;            // lateral accel for weave [g]
-  double maneuver_freq = 0.4;         // [Hz]
-  double maneuver_phase_deg = 0.0;    // weave phase offset [deg] (Monte Carlo randomizes this)
+  // "constant" | "weave" | "icbm" | "hgv" | "rv_penaids"
+  std::string maneuver = "constant";
+  double maneuver_g = 3.0;          // lateral accel for weave [g]
+  double maneuver_freq = 0.4;       // [Hz]
+  double maneuver_phase_deg = 0.0;  // weave phase offset [deg] (Monte Carlo randomizes this)
+
+  // --- Threat suite (issue #42). Opt-in: consulted only by the matching maneuver string, so the
+  // constant/weave paths are untouched. ---
+  IcbmConfig icbm;     // target.maneuver == "icbm"
+  HgvConfig hgv;       // target.maneuver == "hgv"
+  RvPenaidsConfig rv;  // target.maneuver == "rv_penaids"
 };
 
 // One fixed external sensor in the multi-tracker fusion path (issue #5). Type "radar" yields

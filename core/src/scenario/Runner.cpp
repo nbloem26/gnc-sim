@@ -569,7 +569,7 @@ SimResult runSimulation(const SimConfig& cfg) {
       registry.makeNavigator(cfg.nav.filter, cfg.nav, cfg.sensors.seeker, cfg.dt);
   const std::unique_ptr<IDynamics> dyn =
       registry.makeDynamics(cfg.model, cfg.vehicle, cfg.integrator);
-  const std::unique_ptr<IThreat> threat = registry.makeThreat(cfg.target);
+  const std::unique_ptr<IThreat> threat = registry.makeThreat(cfg.target, cfg.env.g0);
 
   AeroModel aero(cfg.aero);
   // Booster aero: same model on a copy of the aero config with the larger boost reference area,

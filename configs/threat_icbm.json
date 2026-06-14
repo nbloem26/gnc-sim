@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "scenario": "homing",
+  "model": "3dof",
+  "seed": 1,
+  "dt": 0.01,
+  "t_end": 40.0,
+  "integrator": "rk4",
+  "origin": { "lat0_deg": 28.4889, "lon0_deg": -80.5778, "alt0_m": 0.0 },
+  "env": { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": false },
+  "aero": { "ref_area": 0.02, "cd0": 0.3 },
+  "vehicle": { "pos0": [0,0,0], "launch_speed": 2200, "launch_elevation_deg": 68, "launch_azimuth_deg": 0, "mass0": 60.0 },
+  "guidance": { "law": "pronav", "nav_constant": 4.0, "max_accel": 1500.0 },
+  "sensors": { "enable": false },
+  "target": {
+    "pos0": [70000, 0, 35000],
+    "vel0": [-1600, 0, 250],
+    "maneuver": "icbm",
+    "icbm": {
+      "payload_mass_kg": 600.0,
+      "stages": [
+        { "thrust_n": 520000.0, "burn_time_s": 60.0, "propellant_mass_kg": 11000.0, "dry_mass_kg": 1500.0 },
+        { "thrust_n": 130000.0, "burn_time_s": 70.0, "propellant_mass_kg": 3200.0, "dry_mass_kg": 600.0 }
+      ]
+    }
+  }
+}

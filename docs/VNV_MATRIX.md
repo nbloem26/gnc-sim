@@ -47,6 +47,9 @@ If you add a model, add a row here too, or CI fails (see `AGENTS.md` → *Adding
 | Environment | `round` hi-fi (`env.gravity`/`env.atmosphere`/`env.wind`) | EGM J2/J3/J4 zonal gravity (J2-only reduces to central+J2 bit-for-bit); extended atmosphere + winds; rotating-ECEF Coriolis/centrifugal; vacuum energy drift 2.7e-7/orbit | `env_fidelity_test::*` | — | in-test gravity-vs-reference + energy-conservation checks |
 | Threat | `constant` (`target.maneuver`) | Non-maneuvering target → zero applied acceleration | `runner_test::Runner.UnguidedProjectileFallsBack`, `registry_test::Registry.ThreatKeysResolve` | `projectile_3dof` | `validate.py::check_ballistic` |
 | Threat | `weave` (`target.maneuver`) | Sinusoidal perpendicular weave; APN/IMM benchmarks rely on it | `apn_test::Apn.BeatsPnAgainstWeavingTarget`, `imm_test::Imm.OutperformsSingleEkfUnderManeuver` | `montecarlo` | `pkill.py` campaign |
+| Threat | `icbm` (`target.maneuver`) | Multi-stage boost: mass drops by the dry mass at each staging time; lofted boost-then-coast reaches an ICBM apogee/range band | `threat_suite_test::ThreatSuite.IcbmMassDropsAtStageTimes`, `threat_suite_test::ThreatSuite.IcbmReachesIcbmApogeeAndRangeBand`, `registry_test::Registry.ThreatKeysResolve` | — | — |
+| Threat | `hgv` (`target.maneuver`) | Lift/drag skip-glide: multiple altitude pull-ups; downrange increases with L/D | `threat_suite_test::ThreatSuite.HgvExhibitsSkipOscillation`, `threat_suite_test::ThreatSuite.HgvDownrangeScalesWithLiftToDrag` | — | — |
+| Threat | `rv_penaids` (`target.maneuver`) | Ballistic RV deploys penaids that separate and score as more penaid-like than the true RV | `threat_suite_test::ThreatSuite.RvPenaidsDeployAndAreScoredAgainstTrueRv`, `threat_suite_test::ThreatSuite.RvPenaidsThreatIsBallisticRv` | — | — |
 
 ## How to read a row
 

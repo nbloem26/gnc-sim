@@ -63,7 +63,16 @@ config is valid. Shape (defaults shown):
                 "imm_q_man": 3000.0,          // IMM maneuver model process-accel PSD [m^2/s^3]
                 "imm_p_stay": 0.999 },        // IMM Markov mode self-transition prob (stickiness)
   "target":   { "pos0": [8000,0,3000], "vel0": [-250,0,0],
-                "maneuver": "constant", "maneuver_g": 3.0, "maneuver_freq": 0.4 },
+                // maneuver: "constant" | "weave" | "icbm" | "hgv" | "rv_penaids" (issue #42)
+                "maneuver": "constant", "maneuver_g": 3.0, "maneuver_freq": 0.4,
+                // Threat suite (issue #42) — opt-in sub-blocks consulted only by the matching key:
+                "icbm": { "payload_mass_kg": 600.0,        // multi-stage boosting ICBM
+                          "stages": [ { "thrust_n": 520000.0, "burn_time_s": 60.0,
+                                        "propellant_mass_kg": 11000.0, "dry_mass_kg": 1500.0 } ] },
+                "hgv":  { "ld_ratio": 2.5, "ballistic_coeff": 6000.0,   // hypersonic glide vehicle
+                          "rho0_kgpm3": 1.225, "scale_height_m": 7200.0, "pull_up_alt_m": 60000.0 },
+                "rv":   { "penaid_count": 6, "deploy_time_s": 2.0,      // reentry vehicle + penaids
+                          "deploy_dv_mps": 8.0, "penaid_decel_mps2": 1.0 } },
   "trackers": { "enabled": false, "process_psd": 50.0, "sensors": [] },   // multi-sensor fusion
   "decoys":   { "enabled": false, "count": 0, "separation": 50.0, "separability": 1.0,
                 "target_intensity": 1.0, "target_size": 1.0, "target_decel": 1.0,
