@@ -138,6 +138,33 @@ jobs:
           name: web-out
           path: web/out
 
+  # --- Per-step cost budget (issue #53). ADDITIVE: a Release build of the perf benchmark
+  # (apps/bench) measures ns/step for the named scenarios and FAILS if any exceeds the committed
+  # budget (configs/perf_budget.json) plus its generous headroom. The headroom absorbs CI-runner
+  # variance, so the gate catches genuine regressions (e.g. losing the frames.reserve() that took
+  # homing_3dof from ~290 to ~94 ns/step), not jitter. Touches no other job. ---
+  perf-budget:
+    name: Per-step cost budget (ns/step regression gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build benchmark (Release)
+        run: |
+          cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-perf -j"$(nproc)" --target gncsim-bench
+      - name: Check per-step cost against budget
+        run: |
+          set -e
+          for label in homing_3dof homing_6dof_hifi ballistic_round; do
+            ./build-perf/apps/bench/gncsim-bench \
+              --config "configs/${label}.json" \
+              --budget configs/perf_budget.json \
+              --label "${label}" \
+              --iters 300 --warmup 30
+          done
+
   # --- Test-depth jobs (issue #51). All ADDITIVE: each builds the tests in a separate build dir
   # behind an opt-in CMake flag, so the default `native` job above is untouched. ---
 

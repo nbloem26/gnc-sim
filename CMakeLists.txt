@@ -13,6 +13,9 @@ endif()
 option(GNCSIM_BUILD_TESTS "Build C++ unit tests" ON)
 option(GNCSIM_BUILD_CLI "Build the native CLI" ON)
 option(GNCSIM_BUILD_PYTHON "Build the pybind11 Python bindings (bindings/)" OFF)
+# Per-step cost benchmark + perf-budget gate (issue #53). Native-only offline tooling; on by default
+# alongside the CLI so CI can exercise the budget check. Never built under Emscripten.
+option(GNCSIM_BUILD_BENCH "Build the native per-step perf benchmark" ON)
 
 # --- Test-depth tooling (issue #51), all opt-in so the DEFAULT build/test path is unchanged. ---
 # Comma-separated sanitizer set, e.g. -DGNCSIM_SANITIZE=address,undefined. Empty (default) = off.
@@ -54,6 +57,9 @@ add_subdirectory(core)
 if(NOT EMSCRIPTEN)
   if(GNCSIM_BUILD_CLI)
     add_subdirectory(apps/cli)
+  endif()
+  if(GNCSIM_BUILD_BENCH)
+    add_subdirectory(apps/bench)
   endif()
   if(GNCSIM_BUILD_TESTS)
     enable_testing()
