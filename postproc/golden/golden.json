@@ -1,0 +1,101 @@
+{
+  "cases": {
+    "ballistic_round": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 0.0,
+        "intercept_time": 175.86941629783328,
+        "miss_distance": 487313.34498192783,
+        "num_frames": 22562.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
+    "discrimination": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 14.024519842824688,
+        "miss_distance": 0.000115232999095839,
+        "num_frames": 2806.0
+      },
+      "schema_version": 1,
+      "seed": 7
+    },
+    "engagement_cued": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 21.691398801522347,
+        "launch_time": 0.735,
+        "miss_distance": 1.0454142507826196,
+        "num_frames": 4340.0
+      },
+      "schema_version": 1,
+      "seed": 7
+    },
+    "homing_3dof": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 14.024519842824688,
+        "miss_distance": 0.000115232999095839,
+        "num_frames": 2806.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
+    "homing_boost": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 10.609221797374733,
+        "miss_distance": 0.00012865104449512321,
+        "num_frames": 2123.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
+    "montecarlo": {
+      "kind": "mc",
+      "mc_cases": 32,
+      "metrics": {
+        "cep": 2.260066155,
+        "n": 32.0,
+        "pk": 0.84375
+      },
+      "schema_version": 1,
+      "seed": 12345
+    },
+    "projectile_3dof": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 0.0,
+        "intercept_time": 47.535000000000004,
+        "miss_distance": 42332.6380524544,
+        "num_frames": 9507.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
+    "track_fused": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 0.0,
+        "intercept_time": 14.02463325079744,
+        "miss_distance": 3.556971737229826,
+        "num_frames": 2806.0
+      },
+      "schema_version": 1,
+      "seed": 7
+    }
+  },
+  "format_version": 1
+}

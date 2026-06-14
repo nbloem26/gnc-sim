@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "scenario": "discrimination",
   "model": "3dof",
   "seed": 7,

@@ -1,0 +1,41 @@
+name: Golden runs
+
+# Golden-run regression harness (issue #7). Builds the native CLI, then runs the
+# canonical configs at fixed seeds and compares their key metrics to the committed
+# baseline (postproc/golden/golden.json). A drift outside tolerance fails the job.
+# Separate from ci.yml so the metric-regression gate is independent of build/lint.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Fork-safe: needs no secrets and runs entirely on the standard github-hosted runner.
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    name: Golden-run regression check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+
+      - name: Build native CLI
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native -j"$(nproc)" --target gncsim
+
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+
+      - name: Install Python deps
+        run: pip install -r postproc/requirements.txt
+
+      - name: Golden-run regression check
+        run: |
+          cd postproc
+          python -m gncpost.golden
