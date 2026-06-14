@@ -54,6 +54,24 @@ export const VALIDATION_FIGURES: Fig[] = [
       'Consolidated analytical checks — energy/Mach consistency, integrator convergence, and ' +
       'guidance-law behaviour — confirming the dynamics core matches closed-form expectations.',
   },
+  {
+    src: '/figures/uq_convergence.png',
+    title: 'Monte Carlo Convergence — CEP with Confidence Band',
+    caption:
+      'The Circular Error Probable plotted against the number of Monte Carlo cases, with a ' +
+      'running 95% bootstrap confidence band. The estimate settles and the band tightens as ' +
+      '1/sqrt(N), making a campaign’s statistical sufficiency visible: enough cases have ' +
+      'been run once the band is narrow relative to the headline number.',
+  },
+  {
+    src: '/figures/uq_sobol.png',
+    title: 'Global Sensitivity — Sobol Indices',
+    caption:
+      'First- and total-order Sobol indices rank the dispersion inputs (launch speed, launch ' +
+      'elevation, target position, weave phase) by how much each drives miss distance. ' +
+      'Computed with a hand-rolled Saltelli sampler over single deterministic engagements — ' +
+      'the variance decomposition that tells you which uncertainty to reduce first.',
+  },
 ];
 
 function Figure({ fig }: { fig: Fig }) {
