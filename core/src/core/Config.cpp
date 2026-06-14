@@ -75,6 +75,29 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     const std::string frame = get_or<std::string>(e, "frame", c.env.frame);
     c.env.frame = (frame == "round") ? "round" : "flat";
     c.env.j2 = get_or<bool>(e, "j2", c.env.j2);
+
+    // High-fidelity environment (issue #41). Tolerant: unknown strings fall back to the defaults so
+    // the flat/round baselines are never disturbed by a typo.
+    const std::string gm = get_or<std::string>(e, "gravity_model", c.env.gravity_model);
+    c.env.gravity_model = (gm == "egm") ? "egm" : "central";
+    const std::string am = get_or<std::string>(e, "atmosphere_model", c.env.atmosphere_model);
+    c.env.atmosphere_model = (am == "extended") ? "extended" : "ussa76";
+    c.env.rotating_ecef = get_or<bool>(e, "rotating_ecef", c.env.rotating_ecef);
+    if (e.contains("gravity")) {
+      const auto& g = e["gravity"];
+      c.env.gravity.include_j2 = get_or<bool>(g, "j2", c.env.gravity.include_j2);
+      c.env.gravity.include_j3 = get_or<bool>(g, "j3", c.env.gravity.include_j3);
+      c.env.gravity.include_j4 = get_or<bool>(g, "j4", c.env.gravity.include_j4);
+    }
+    if (e.contains("wind")) {
+      const auto& w = e["wind"];
+      c.env.wind.enabled = get_or<bool>(w, "enabled", c.env.wind.enabled);
+      c.env.wind.surface_mps = get_or<double>(w, "surface_mps", c.env.wind.surface_mps);
+      c.env.wind.jet_mps = get_or<double>(w, "jet_mps", c.env.wind.jet_mps);
+      c.env.wind.jet_alt_m = get_or<double>(w, "jet_alt_m", c.env.wind.jet_alt_m);
+      c.env.wind.decay_scale_m = get_or<double>(w, "decay_scale_m", c.env.wind.decay_scale_m);
+      c.env.wind.dir_deg = get_or<double>(w, "dir_deg", c.env.wind.dir_deg);
+    }
   }
 
   if (j.contains("aero")) {

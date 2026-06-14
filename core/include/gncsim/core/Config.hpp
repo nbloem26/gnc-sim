@@ -15,12 +15,42 @@ namespace gncsim {
 
 enum class Integrator { Euler, RK2, RK4 };
 
+// Truncated zonal spherical-harmonic ("EGM") gravity selection (issue #41). Opt-in on the round
+// path. The `j2` flag below (kept for the legacy round path) maps onto include_j2; when no higher
+// zonals are requested the field reduces EXACTLY to the existing central+J2 model. Coefficients are
+// cited in core/src/env/EnvFidelity.cpp.
+struct GravityFidelityConfig {
+  bool include_j2 = false;  // J2 oblateness term
+  bool include_j3 = false;  // J3 pear-shape (odd zonal)
+  bool include_j4 = false;  // J4 zonal
+};
+
+// Parameterized wind profile (issue #41). Opt-in on the round path. Disabled => no wind, drag is
+// computed against the co-rotating atmosphere exactly as before.
+struct WindConfig {
+  bool enabled = false;
+  double surface_mps = 0.0;       // wind speed at the ground [m/s]
+  double jet_mps = 0.0;           // peak wind speed at the jet altitude [m/s]
+  double jet_alt_m = 10000.0;     // altitude of the wind maximum [m]
+  double decay_scale_m = 8000.0;  // exponential decay scale above the jet [m]
+  double dir_deg = 0.0;           // wind heading, from East toward North (ENU convention) [deg]
+};
+
 struct EnvConfig {
   double g0 = 9.80665;                // surface gravity [m/s^2]
   bool altitude_dependent_g = false;  // inverse-square falloff if true (flat mode)
   bool atmosphere = true;             // apply USSA76 drag if true
   std::string frame = "flat";         // "flat" (default, flat-Earth ENU) | "round" (WGS-84 ECI)
   bool j2 = false;                    // add J2 oblateness term to round-mode central gravity
+
+  // --- High-fidelity environment (issue #41). Opt-in, additive; all default to the existing
+  // round-mode behaviour so flat + current round runs are byte-identical. ---
+  std::string gravity_model = "central";  // "central" (central+optional J2) | "egm" (J2..J4 zonals)
+  std::string atmosphere_model = "ussa76";  // "ussa76" (<=86 km) | "extended" (USSA76 + >86 km ext)
+  bool rotating_ecef = false;     // round path: integrate in rotating ECEF (Coriolis+centrifugal)
+                                  // instead of ECI. Physically equivalent; alternative formulation.
+  GravityFidelityConfig gravity;  // zonal selection when gravity_model == "egm"
+  WindConfig wind;                // wind profile (round path drag)
 };
 
 struct AeroConfig {

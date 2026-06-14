@@ -273,3 +273,41 @@ about `origin`**, so the data contract, engagement geometry, and the web map are
 geodesy lives in `core/src/env/Frames.cpp` (only reached in round mode); the flat-Earth path is
 byte-identical to before. Round mode targets the unguided ballistic launch-engagement case — no
 guidance/sensors/EKF are applied on this path.
+
+#### High-fidelity environment (issue #41)
+
+Opt-in, additive extensions on the round path (`core/src/env/EnvFidelity.cpp`). All default off, so
+flat mode and the existing round mode are byte-identical. New `env` keys:
+
+```jsonc
+"env": {
+  "frame": "round",
+  "gravity_model": "egm",          // "central" (default) | "egm" — truncated zonal harmonics
+  "gravity": { "j2": true, "j3": true, "j4": true },  // zonals when gravity_model == "egm"
+  "atmosphere_model": "extended",  // "ussa76" (default, <=86 km) | "extended" (adds 86..1000 km)
+  "rotating_ecef": false,          // integrate in rotating ECEF (Coriolis+centrifugal) vs ECI
+  "wind": {                        // parameterized horizontal wind for drag (ENU, sheared profile)
+    "enabled": true, "surface_mps": 5.0, "jet_mps": 35.0,
+    "jet_alt_m": 11000.0, "decay_scale_m": 9000.0, "dir_deg": 90.0
+  }
+}
+```
+
+- **Gravity (`gravity_model: "egm"`)** — central point-mass plus the selected zonal harmonics J2,
+  J3, J4 (unnormalized WGS-84/EGM-96 coefficients, cited in `EnvFidelity.cpp`). With only J2 it is
+  bit-identical to the legacy central+J2 model. The legacy `env.j2` flag still works and also turns
+  on J2 for the EGM model.
+- **Atmosphere (`atmosphere_model: "extended"`)** — USSA76 unchanged below 86 km, then a
+  log-linear (continuous, monotone) interpolation of the US Standard Atmosphere 1976 upper tables up
+  to ~1000 km, with the 86 km handover density pinned to USSA76. **Reduced model:** no
+  solar-activity (F10.7), geomagnetic (Ap), or diurnal/seasonal variation — that is a follow-up
+  (full NRLMSISE-00 port).
+- **`rotating_ecef`** — alternative formulation that integrates directly in the rotating ECEF frame
+  with explicit Coriolis (`-2 ω×v`) and centrifugal (`-ω×(ω×r)`) terms. Physically equivalent to the
+  ECI path (agrees to integrator precision).
+- **`wind`** — a horizontal ENU wind that shears linearly from `surface_mps` up to `jet_mps` at
+  `jet_alt_m`, then decays exponentially above (scale `decay_scale_m`), blowing toward `dir_deg`
+  (East→North). Drag is computed against the air-relative velocity.
+
+No telemetry columns are added; the CSV/JSON schema is unchanged. Example config:
+`configs/ballistic_round_hifi.json`.
