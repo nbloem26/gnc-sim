@@ -315,6 +315,53 @@ button.primary:hover:not(:disabled) {
   color: var(--accent);
 }
 
+/* ---- Tabs ----------------------------------------------------------------- */
+.tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 8px 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tab:hover:not(.tabActive) {
+  color: var(--text);
+  border-color: transparent;
+  background: var(--panel-2);
+}
+.tab.tabActive {
+  color: var(--accent);
+  background: var(--panel-2);
+  border-color: var(--border);
+  border-bottom: 1px solid var(--panel-2);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tabpanel:focus {
+  outline: none;
+}
+
+/* Validation figures rendered inline inside a tab card: drop the route-level
+   padding/centering, keep the responsive 2-up grid. */
+.valGridInline {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
 /* ---- Monte Carlo ---------------------------------------------------------- */
 .mcControls {
   display: flex;
