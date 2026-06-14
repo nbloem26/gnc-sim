@@ -13,6 +13,10 @@ Submodules:
     montecarlo   — CEP / dispersion analysis of a Monte-Carlo summary
     rundb        — SQLite run database: queryable campaigns + provenance (issue #43)
     loop_closure — re-derive IMU noise from sim output (fidelity proof)
+    uq           — bootstrap CIs, Sobol, trajectory dispersion bands (issues #33/#49)
+    vnv          — V&V-matrix consistency tooling (issue #34)
+    credibility  — NASA-STD-7009 per-model credibility scoring (issue #49)
+    vnv_report   — auto-generated V&V / credibility Markdown report (issue #49)
 """
 
 from __future__ import annotations
