@@ -102,6 +102,27 @@ struct TargetConfig {
   double maneuver_phase_deg = 0.0;    // weave phase offset [deg] (Monte Carlo randomizes this)
 };
 
+// One fixed external sensor in the multi-tracker fusion path (issue #5). Type "radar" yields
+// [az, el, range, range_rate]; type "ir" is angles-only [az, el]. Position is fixed in ENU [m].
+struct TrackerSensorConfig {
+  std::string type = "radar";  // "radar" | "ir"
+  Vector3 pos;                 // sensor location, ENU [m] (e.g. ground site at origin, space high)
+  double sigma_az = 1.0e-3;    // azimuth noise std [rad]   (radar + ir)
+  double sigma_el = 1.0e-3;    // elevation noise std [rad] (radar + ir)
+  double sigma_range = 10.0;   // range noise std [m]        (radar only)
+  double sigma_range_rate = 1.0;  // range-rate noise std [m/s] (radar only)
+};
+
+// Multi-sensor target-track fusion (issue #5). Opt-in: when disabled (default) nothing changes and
+// the default single-seeker navigation path is byte-identical. When enabled, the Runner builds a
+// TargetTrackEkf, synthesizes a noisy measurement from each sensor each step, fuses them
+// sequentially into one absolute target-state estimate, and guidance uses (track_est - vehicle).
+struct TrackersConfig {
+  bool enabled = false;
+  double process_psd = 50.0;  // target-accel PSD q [m^2/s^3] per axis (nearly-constant-velocity Q)
+  std::vector<TrackerSensorConfig> sensors;
+};
+
 struct MonteCarloConfig {
   int num_cases = 0;  // 0 => single deterministic run
   double launch_speed_sigma = 0.0;
@@ -127,6 +148,7 @@ struct SimConfig {
   SensorConfig sensors;
   NavConfig nav;
   TargetConfig target;
+  TrackersConfig trackers;
   MonteCarloConfig monte_carlo;
 };
 

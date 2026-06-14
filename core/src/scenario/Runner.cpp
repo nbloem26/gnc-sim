@@ -21,6 +21,7 @@
 #include "gncsim/env/Frames.hpp"
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
+#include "gncsim/gnc/TargetTrackEkf.hpp"
 #include "gncsim/sensors/Sensors.hpp"
 
 namespace gncsim {
@@ -59,6 +60,44 @@ Vector3 targetAccel(const TargetConfig& cfg, const EntityState& tgt, double t) {
   const Vector3 perp{-vh.y / s, vh.x / s, 0.0};
   const double phase = cfg.maneuver_phase_deg * M_PI / 180.0;
   return perp * (cfg.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg.maneuver_freq * t + phase));
+}
+
+// Build the fixed TrackSensor list from the trackers config (issue #5).
+std::vector<TrackSensor> buildTrackSensors(const TrackersConfig& cfg) {
+  std::vector<TrackSensor> sensors;
+  sensors.reserve(cfg.sensors.size());
+  for (const auto& sc : cfg.sensors) {
+    TrackSensor s;
+    s.type = (sc.type == "ir") ? TrackSensorType::Ir : TrackSensorType::Radar;
+    s.pos = sc.pos;
+    s.sigma_az = sc.sigma_az;
+    s.sigma_el = sc.sigma_el;
+    s.sigma_range = sc.sigma_range;
+    s.sigma_range_rate = sc.sigma_range_rate;
+    sensors.push_back(s);
+  }
+  return sensors;
+}
+
+// Synthesize one sensor's noisy measurement of the target's true absolute state, drawing Gaussian
+// noise from the run RNG (Box-Muller — parity-preserving). Radar -> [az,el,range,range_rate];
+// IR -> [az,el]. The measurement is taken from the sensor's fixed ENU position.
+std::vector<double> synthSensorMeasurement(const TrackSensor& s, const Vector3& tgt_pos,
+                                           const Vector3& tgt_vel, Rng& rng) {
+  const Vector3 rel = tgt_pos - s.pos;
+  const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+  const double r = rel.norm();
+  double az = std::atan2(rel.y, rel.x);
+  double el = std::atan2(rel.z, horiz);
+  az += rng.gaussian(0.0, s.sigma_az);
+  el += rng.gaussian(0.0, s.sigma_el);
+  if (s.type == TrackSensorType::Ir) {
+    return {az, el};
+  }
+  double range = r + rng.gaussian(0.0, s.sigma_range);
+  double range_rate =
+      (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s.sigma_range_rate);
+  return {az, el, range, range_rate};
 }
 
 // =============================================================================================
@@ -272,6 +311,20 @@ SimResult runSimulation(const SimConfig& cfg) {
 
   Autopilot autopilot(cfg.control);
 
+  // --- Multi-sensor target track (issue #5): opt-in fusion of fixed ground/space sensors ---
+  // When enabled, guidance uses the FUSED absolute target estimate (track_est - vehicle) instead of
+  // the seeker. The default path (trackers disabled) never enters any tracker code below, so its
+  // RNG draw order and trajectory stay byte-identical.
+  const bool use_trackers = cfg.trackers.enabled && !cfg.trackers.sensors.empty();
+  const std::vector<TrackSensor> track_sensors =
+      use_trackers ? buildTrackSensors(cfg.trackers) : std::vector<TrackSensor>{};
+  TargetTrackEkf track_ekf(cfg.dt, cfg.trackers.process_psd);
+  if (use_trackers) {
+    // Cue the track from a coarse initial fix at the true target state with a wide covariance, so
+    // angles-only (IR-only) configs still have a position to refine. This consumes no RNG.
+    track_ekf.bootstrap(tgt.pos, tgt.vel);
+  }
+
   double best_range = (tgt.pos - veh.pos).norm();
   double best_t = 0.0;
   Vector3
@@ -324,8 +377,27 @@ SimResult runSimulation(const SimConfig& cfg) {
     Engagement est = truth;
     double seeker_los_meas = truth.los_angle;
     double nav_nis = 0.0;
+    Vector3 track_pos_est;  // fused absolute target-position estimate (issue #5); 0 when disabled
+    double track_nis = 0.0;
 
-    if (use_ekf) {
+    if (use_trackers) {
+      // Multi-sensor fusion path. Predict the target track, then sequentially fuse a synthesized
+      // noisy measurement from each fixed sensor (radar [az,el,range,range_rate] / IR [az,el]).
+      // Guidance below uses the fused absolute target estimate relative to the vehicle. RNG is
+      // drawn only here (this whole branch is unreachable on the default path).
+      track_ekf.predict();
+      for (const auto& s : track_sensors) {
+        const std::vector<double> z = synthSensorMeasurement(s, tgt.pos, tgt.vel, rng);
+        track_nis = track_ekf.update(s, z);
+      }
+      track_pos_est = track_ekf.pos();
+      nav_nis = track_nis;
+
+      EntityState veh_est = veh, tgt_est = tgt;
+      tgt_est.pos = track_ekf.pos();
+      tgt_est.vel = track_ekf.vel();
+      est = computeEngagement(veh_est, tgt_est);
+    } else if (use_ekf) {
       // EKF path: az/el/range measurement of the relative position (truth when sensors disabled,
       // Gaussian-corrupted via the run's Rng when enabled). Native and WASM run identical code.
       const double horiz =
@@ -474,6 +546,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.v_closing = truth.v_closing;
     f.range = truth.range;
     f.nav_nis = nav_nis;
+    f.track_pos_est = track_pos_est;
+    f.track_nis = track_nis;
     f.imu_accel_true = specific_force;
     f.imu_accel_meas = imu_accel_meas;
     f.imu_gyro_true = veh.angVel;
