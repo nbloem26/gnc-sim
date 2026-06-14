@@ -39,6 +39,7 @@ struct Frame {
   Quaternion veh_att;
   double mass = 0.0;
   double mach = 0.0;
+  double thrust = 0.0;  // current boost thrust magnitude [N]; 0 on the unpowered default path
 
   // Target truth
   Vector3 tgt_pos, tgt_vel;

@@ -30,6 +30,8 @@ config is valid. Shape (defaults shown):
              "cn_alpha": 12.0 },
   "vehicle": { "pos0": [0,0,0], "launch_speed": 600, "launch_elevation_deg": 45,
                "launch_azimuth_deg": 0, "mass0": 22.0, "inertia": 1.2 },
+  "propulsion": { "thrust": 0.0, "burn_time": 0.0, "propellant_mass": 0.0,
+                  "boost_ref_area": 0.0, "stage_time": 0.0, "stage_mass_drop": 0.0 },
   "guidance": { "law": "pronav", "nav_constant": 3.0, "max_accel": 300.0 },
   "control":  { "kp": 8.0, "kd": 2.5, "max_fin_deflection": 0.35 },   // 6DOF only
   "sensors":  { "enable": false, "imu": { ...see sensor_params.json... },
@@ -63,7 +65,7 @@ Allan-variance pipeline** (`sensors/`) and fed back into the sim — see §5.
     "veh_x": [...], "veh_y": [...], "veh_z": [...],
     "veh_vx": [...], "veh_vy": [...], "veh_vz": [...],
     "roll": [...], "pitch": [...], "yaw": [...],
-    "mass": [...], "mach": [...],
+    "mass": [...], "mach": [...], "thrust": [...],
     "tgt_x": [...], "tgt_y": [...], "tgt_z": [...],
     "tgt_vx": [...], "tgt_vy": [...], "tgt_vz": [...],
     "accel_cmd_x": [...], "accel_cmd_y": [...], "accel_cmd_z": [...],
@@ -80,6 +82,12 @@ Allan-variance pipeline** (`sensors/`) and fed back into the sim — see §5.
 step. It is `0` on the default alpha-beta path; on the EKF path (`nav.filter == "ekf"`) its mean
 should sit near 3 for a consistent filter. On error the WASM entry returns `{"error": "<message>"}`.
 
+`thrust` is the boost-motor thrust magnitude [N] applied each step (along velocity in 3DOF, along
+the body nose in 6DOF). It is `0` on the default unpowered path (`propulsion.thrust == 0`) and
+during/after the burn window otherwise. The `propulsion` block (defaults all `0`) adds a boost
+phase: linear propellant burn over `burn_time`, an optional larger `boost_ref_area` booster drag
+area during the boost window, and optional booster jettison (`stage_time`, `stage_mass_drop`).
+
 ---
 
 ## 3. Output — CSV files (native CLI, for Python / Monte Carlo)
@@ -88,7 +96,7 @@ should sit near 3 for a consistent filter. On error the WASM entry returns `{"er
 
 | File | Columns |
 |---|---|
-| `vehicle.csv` | `t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach` |
+| `vehicle.csv` | `t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach,thrust` |
 | `target.csv`  | `t,x,y,z,vx,vy,vz` |
 | `gnc.csv`     | `t,accel_cmd_x,accel_cmd_y,accel_cmd_z,fin_x,fin_y,fin_z,los_angle,los_rate,v_closing,range,nav_x,nav_y,nav_z,nav_nis` |
 | `sensors.csv` | `t,imu_accel_true_x,imu_accel_meas_x,imu_gyro_true_x,imu_gyro_meas_x,seeker_los_true,seeker_los_meas` |
