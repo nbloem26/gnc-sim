@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "gncsim/aero/Aero.hpp"
 #include "gncsim/core/Rng.hpp"
@@ -23,6 +24,8 @@
 #include "gncsim/gnc/Ekf.hpp"
 #include "gncsim/gnc/Gnc.hpp"
 #include "gncsim/gnc/TargetTrackEkf.hpp"
+#include "gncsim/model/Interfaces.hpp"
+#include "gncsim/model/Registry.hpp"
 #include "gncsim/sensors/Sensors.hpp"
 
 namespace gncsim {
@@ -48,19 +51,6 @@ Quaternion quatFromTo(const Vector3& from, const Vector3& to) {
     return Quaternion::fromAxisAngle(axis, M_PI);
   }
   return Quaternion::fromAxisAngle(a.cross(b), std::acos(d));
-}
-
-// Target acceleration for the configured maneuver (world frame).
-Vector3 targetAccel(const TargetConfig& cfg, const EntityState& tgt, double t) {
-  if (cfg.maneuver != "weave") return Vector3{};
-  // Sinusoidal lateral accel, horizontal and perpendicular to the target's ground track.
-  Vector3 vh = tgt.vel;
-  vh.z = 0.0;
-  const double s = vh.norm();
-  if (s < 1e-6) return Vector3{};
-  const Vector3 perp{-vh.y / s, vh.x / s, 0.0};
-  const double phase = cfg.maneuver_phase_deg * M_PI / 180.0;
-  return perp * (cfg.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg.maneuver_freq * t + phase));
 }
 
 // Constant-velocity lead / intercept aim for launch-on-track (issue #8).
@@ -113,44 +103,6 @@ Vector3 leadIntercept(const Vector3& launch_pos, double vi, const Vector3& tgt_p
   }
 
   return aim_dir * vi;
-}
-
-// Build the fixed TrackSensor list from the trackers config (issue #5).
-std::vector<TrackSensor> buildTrackSensors(const TrackersConfig& cfg) {
-  std::vector<TrackSensor> sensors;
-  sensors.reserve(cfg.sensors.size());
-  for (const auto& sc : cfg.sensors) {
-    TrackSensor s;
-    s.type = (sc.type == "ir") ? TrackSensorType::Ir : TrackSensorType::Radar;
-    s.pos = sc.pos;
-    s.sigma_az = sc.sigma_az;
-    s.sigma_el = sc.sigma_el;
-    s.sigma_range = sc.sigma_range;
-    s.sigma_range_rate = sc.sigma_range_rate;
-    sensors.push_back(s);
-  }
-  return sensors;
-}
-
-// Synthesize one sensor's noisy measurement of the target's true absolute state, drawing Gaussian
-// noise from the run RNG (Box-Muller — parity-preserving). Radar -> [az,el,range,range_rate];
-// IR -> [az,el]. The measurement is taken from the sensor's fixed ENU position.
-std::vector<double> synthSensorMeasurement(const TrackSensor& s, const Vector3& tgt_pos,
-                                           const Vector3& tgt_vel, Rng& rng) {
-  const Vector3 rel = tgt_pos - s.pos;
-  const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
-  const double r = rel.norm();
-  double az = std::atan2(rel.y, rel.x);
-  double el = std::atan2(rel.z, horiz);
-  az += rng.gaussian(0.0, s.sigma_az);
-  el += rng.gaussian(0.0, s.sigma_el);
-  if (s.type == TrackSensorType::Ir) {
-    return {az, el};
-  }
-  double range = r + rng.gaussian(0.0, s.sigma_range);
-  double range_rate =
-      (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s.sigma_range_rate);
-  return {az, el, range, range_rate};
 }
 
 // =============================================================================================
@@ -268,6 +220,11 @@ SimResult runRoundEarth(const SimConfig& cfg) {
 
   AeroModel aero(cfg.aero);
 
+  // Round-Earth uses 3DOF point-mass integration (gravity supplied per step as ECI central
+  // gravity). Resolve it through the registry so even this path runs the same IDynamics seam.
+  ModelRegistry registry;
+  const std::unique_ptr<IDynamics> dyn = registry.makeDynamics("3dof", cfg.vehicle, cfg.integrator);
+
   // Helper: ECI state -> ENU telemetry (position + velocity) about the origin at time t.
   auto eciToEnuState = [&](const Vector3& r_eci, const Vector3& v_eci, double t, Vector3& pos_enu,
                            Vector3& vel_enu) {
@@ -355,7 +312,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     veh_state.pos = veh_r;
     veh_state.vel = veh_v;
     veh_state.mass = veh_mass;
-    const EntityState veh_next = step3dof(veh_state, drag_eci, g_eci, cfg.dt, cfg.integrator);
+    const EntityState veh_next = dyn->step(veh_state, drag_eci, Vector3{}, g_eci, cfg.dt);
     veh_r = veh_next.pos;
     veh_v = veh_next.vel;
 
@@ -365,7 +322,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     tgt_state.pos = tgt_r;
     tgt_state.vel = tgt_v;
     tgt_state.mass = 1.0;
-    const EntityState tgt_next = step3dof(tgt_state, Vector3{}, tgt_g, cfg.dt, cfg.integrator);
+    const EntityState tgt_next = dyn->step(tgt_state, Vector3{}, Vector3{}, tgt_g, cfg.dt);
     tgt_r = tgt_next.pos;
     tgt_v = tgt_next.vel;
   }
@@ -420,8 +377,20 @@ SimResult runSimulation(const SimConfig& cfg) {
   tgt.pos = cfg.target.pos0;
   tgt.vel = cfg.target.vel0;
 
-  // --- Modules ---
-  GravityModel gravity(cfg.env);
+  // --- Models (resolved by config string through the registry, issue #31) ---
+  // The registry maps the contract's config strings to concrete models behind the interfaces in
+  // model/Interfaces.hpp. Each model is an adapter delegating to the existing numerics, so the
+  // per-step arithmetic, RNG draw order, and trajectory are byte-identical. Default config strings
+  // resolve to exactly today's models.
+  ModelRegistry registry;
+  const std::unique_ptr<IEnvironment> environment = registry.makeEnvironment(cfg.env);
+  const std::unique_ptr<IGuidance> guidance = registry.makeGuidance(cfg.guidance.law, cfg.guidance);
+  const std::unique_ptr<INavigator> navigator =
+      registry.makeNavigator(cfg.nav.filter, cfg.nav, cfg.sensors.seeker, cfg.dt);
+  const std::unique_ptr<IDynamics> dyn =
+      registry.makeDynamics(cfg.model, cfg.vehicle, cfg.integrator);
+  const std::unique_ptr<IThreat> threat = registry.makeThreat(cfg.target);
+
   AeroModel aero(cfg.aero);
   // Booster aero: same model on a copy of the aero config with the larger boost reference area,
   // selected only inside the boost window. Built unconditionally; only used when boost_ref_area>0.
@@ -430,24 +399,23 @@ SimResult runSimulation(const SimConfig& cfg) {
   AeroModel boost_aero(boost_aero_cfg);
   Imu imu(cfg.sensors.imu, cfg.dt, rng);
   Seeker seeker(cfg.sensors.seeker, rng);
-  Navigator nav(cfg.dt);
 
-  // EKF (relative-state) navigation filter: opt-in via cfg.nav.filter == "ekf"; default stays
-  // alpha-beta. az/el measurement sigma = seeker.los_white [rad]; range sigma = nav.range_white
-  // [m].
+  // Which nav filter is active drives the measurement-building branch + nav telemetry below. The
+  // navigator itself is resolved above; this flag only selects how the Runner feeds it.
   const bool use_ekf = (cfg.nav.filter == "ekf");
-  Ekf ekf(cfg.dt, cfg.nav.process_accel_psd, cfg.sensors.seeker.los_white,
-          cfg.sensors.seeker.los_white, cfg.nav.range_white);
 
   Autopilot autopilot(cfg.control);
 
   // --- Multi-sensor target track (issue #5): opt-in fusion of fixed ground/space sensors ---
   // When enabled, guidance uses the FUSED absolute target estimate (track_est - vehicle) instead of
   // the seeker. The default path (trackers disabled) never enters any tracker code below, so its
-  // RNG draw order and trajectory stay byte-identical.
+  // RNG draw order and trajectory stay byte-identical. Each sensor is an ISensor resolved by type.
   const bool use_trackers = cfg.trackers.enabled && !cfg.trackers.sensors.empty();
-  const std::vector<TrackSensor> track_sensors =
-      use_trackers ? buildTrackSensors(cfg.trackers) : std::vector<TrackSensor>{};
+  std::vector<std::unique_ptr<ISensor>> track_sensors;
+  if (use_trackers) {
+    track_sensors.reserve(cfg.trackers.sensors.size());
+    for (const auto& sc : cfg.trackers.sensors) track_sensors.push_back(registry.makeSensor(sc));
+  }
   TargetTrackEkf track_ekf(cfg.dt, cfg.trackers.process_psd);
   if (use_trackers) {
     // Cue the track from a coarse initial fix at the true target state with a wide covariance, so
@@ -508,8 +476,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     }
 
     // --- Environment / aero state ---
-    const AtmSample atm =
-        cfg.env.atmosphere ? atmosphereUSSA76(veh.pos.z) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    const AtmSample atm = cfg.env.atmosphere ? environment->atmosphere(veh.pos.z)
+                                             : AtmSample{0.0, 0.0, 288.15, 340.29};
     const double speed = veh.vel.norm();
     const double mach = atm.speed_of_sound > 0.0 ? speed / atm.speed_of_sound : 0.0;
     veh.mach = mach;
@@ -558,8 +526,8 @@ SimResult runSimulation(const SimConfig& cfg) {
       // drawn only here (this whole branch is unreachable on the default path).
       track_ekf.predict();
       for (const auto& s : track_sensors) {
-        const std::vector<double> z = synthSensorMeasurement(s, tgt.pos, tgt.vel, rng);
-        track_nis = track_ekf.update(s, z);
+        const std::vector<double> z = s->measure(tgt.pos, tgt.vel, rng);
+        track_nis = track_ekf.update(s->spec(), z);
       }
       track_pos_est = track_ekf.pos();
       nav_nis = track_nis;
@@ -601,13 +569,18 @@ SimResult runSimulation(const SimConfig& cfg) {
       }
       seeker_los_meas = el;  // report the (measured) LOS elevation for telemetry parity
 
-      ekf.predict(accel_achieved);  // achieved guidance accel from the previous step (0 on step 0)
-      ekf.update(az, el, rng_meas);
-      nav_nis = ekf.nis();
+      NavMeasurement z;
+      z.az = az;
+      z.el = el;
+      z.range = rng_meas;
+      navigator->predict(
+          accel_achieved);  // achieved guidance accel from the previous step (0 @ k0)
+      navigator->update(z);
+      nav_nis = navigator->nis();
 
       EntityState veh_est = veh, tgt_est = tgt;
-      tgt_est.pos = veh.pos + ekf.relPos();
-      tgt_est.vel = veh.vel + ekf.relVel();
+      tgt_est.pos = veh.pos + navigator->relPos();
+      tgt_est.vel = veh.vel + navigator->relVel();
       est = computeEngagement(veh_est, tgt_est);
     } else {
       // Alpha-beta path (default). Draw order is unchanged from the original implementation.
@@ -621,13 +594,15 @@ SimResult runSimulation(const SimConfig& cfg) {
         if (axis.norm() < 1e-6) axis = Vector3{0, 1, 0};
         measured_rel_pos = Quaternion::fromAxisAngle(axis, ang_err).rotate(truth.rel_pos);
       }
-      nav.update(measured_rel_pos);
+      NavMeasurement z;
+      z.measured_rel_pos = measured_rel_pos;
+      navigator->update(z);
 
       // Relative state used by guidance (filtered estimate, or truth if noise-free).
       if (cfg.sensors.enable) {
         EntityState veh_est = veh, tgt_est = tgt;
-        tgt_est.pos = veh.pos + nav.relPos();
-        tgt_est.vel = veh.vel + nav.relVel();
+        tgt_est.pos = veh.pos + navigator->relPos();
+        tgt_est.vel = veh.vel + navigator->relVel();
         est = computeEngagement(veh_est, tgt_est);
       }
     }
@@ -663,9 +638,11 @@ SimResult runSimulation(const SimConfig& cfg) {
       }
       rel_vel_prev = est.rel_vel;
       apn_have_prev = true;
-      accel_cmd = augmentedProNavCommand(est, cfg.guidance, a_target_est);
+      GuidanceState gs;
+      gs.a_target_est = a_target_est;
+      accel_cmd = guidance->command(est, gs);
     } else {
-      accel_cmd = proNavCommand(est, cfg.guidance);
+      accel_cmd = guidance->command(est, GuidanceState{});
     }
 
     // First-order autopilot lag: the interceptor cannot realize the command instantly. Against a
@@ -730,11 +707,11 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.accel_cmd = accel_cmd;
     f.fin_deflection = fin_deflection;
     if (use_ekf) {
-      f.nav_pos_est = veh.pos + ekf.relPos();
-      f.nav_vel_est = veh.vel + ekf.relVel();
+      f.nav_pos_est = veh.pos + navigator->relPos();
+      f.nav_vel_est = veh.vel + navigator->relVel();
     } else {
-      f.nav_pos_est = veh.pos + (cfg.sensors.enable ? nav.relPos() : truth.rel_pos);
-      f.nav_vel_est = veh.vel + (cfg.sensors.enable ? nav.relVel() : truth.rel_vel);
+      f.nav_pos_est = veh.pos + (cfg.sensors.enable ? navigator->relPos() : truth.rel_pos);
+      f.nav_vel_est = veh.vel + (cfg.sensors.enable ? navigator->relVel() : truth.rel_vel);
     }
     f.los_angle = truth.los_angle;
     f.los_rate = est.los_rate;
@@ -777,7 +754,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     }
 
     // --- Propagate target then vehicle ---
-    const Vector3 ta = targetAccel(cfg.target, tgt, t);
+    const Vector3 ta = threat->accel(tgt, t);
     tgt.vel += ta * cfg.dt;
     tgt.pos += tgt.vel * cfg.dt;
 
@@ -788,7 +765,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     // here.
     if (use_decoys) {
       scene[static_cast<std::size_t>(kTargetIndex)].state = tgt;
-      const Vector3 g_obj = gravity.acceleration(tgt.pos);
+      const Vector3 g_obj = environment->gravity(tgt.pos);
       for (std::size_t oi = 0; oi < scene.size(); ++oi) {
         if (static_cast<int>(oi) == kTargetIndex) continue;
         EntityState& s = scene[oi].state;
@@ -804,10 +781,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     // site (zero velocity, no forces integrated). The target/track/decoy scene above keep advancing
     // so the threat closes in while the launch criterion is being evaluated.
     if (launched) {
-      const Vector3 g = gravity.acceleration(veh.pos);
-      veh = is6dof ? step6dof(veh, force_world, moment_body, cfg.vehicle.inertia, g, cfg.dt,
-                              cfg.integrator)
-                   : step3dof(veh, force_world, g, cfg.dt, cfg.integrator);
+      const Vector3 g = environment->gravity(veh.pos);
+      veh = dyn->step(veh, force_world, moment_body, g, cfg.dt);
 
       // Burn propellant down to the dry-mass floor while thrusting (after the step uses this
       // step's mass for accel, so force_world and accel stay mass-consistent within the step).
