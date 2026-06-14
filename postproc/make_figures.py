@@ -41,6 +41,8 @@ WEB_FIGURES = [
     "fusion_track_error.png",
     "uq_convergence.png",
     "uq_sobol.png",
+    "phenomenology_roc.png",
+    "range_doppler_map.png",
 ]
 
 
@@ -104,6 +106,25 @@ def make_fusion() -> None:
         print("  fusion:", r.summary_line())
 
 
+def make_phenomenology() -> None:
+    from gncpost.phenomenology import (
+        compute_roc,
+        plot_range_doppler,
+        plot_roc,
+        summarize_roc,
+    )
+
+    roc = compute_roc()
+    fig_roc = plot_roc(roc)
+    fig_roc.savefig(POSTPROC_FIG / "phenomenology_roc.png", dpi=130)
+    plt.close(fig_roc)
+    fig_rd = plot_range_doppler()
+    fig_rd.savefig(POSTPROC_FIG / "range_doppler_map.png", dpi=130)
+    plt.close(fig_rd)
+    for line in summarize_roc(roc):
+        print("  pheno:", line)
+
+
 def copy_to_web() -> None:
     WEB_FIG.mkdir(parents=True, exist_ok=True)
     for name in WEB_FIGURES:
@@ -121,6 +142,7 @@ def main() -> None:
     make_validation_summary()
     make_montecarlo(REPO_ROOT / "runs" / "mc_batch")
     make_fusion()
+    make_phenomenology()
 
     # Synthetic-IMU Allan figure (sensors/figures/allan_deviation.png).
     import allan_variance

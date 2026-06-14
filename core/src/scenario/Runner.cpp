@@ -715,8 +715,12 @@ SimResult runSimulation(const SimConfig& cfg) {
       // drawn only here (this whole branch is unreachable on the default path).
       track_ekf.predict();
       for (const auto& s : track_sensors) {
-        const std::vector<double> z = s->measure(tgt.pos, tgt.vel, rng);
-        track_nis = track_ekf.update(s->spec(), z);
+        // detect() gates the measurement on a CFAR detection for phenomenology sensors; for the
+        // plain radar/ir sensors it always detects and delegates to measure() with the same RNG
+        // draws, so the existing fusion path stays byte-identical. On a missed look the tracker
+        // coasts (no update this step for that sensor).
+        const SensorDetection det = s->detect(tgt.pos, tgt.vel, rng);
+        if (det.detected) track_nis = track_ekf.update(s->spec(), det.z);
       }
       track_pos_est = track_ekf.pos();
       nav_nis = track_nis;

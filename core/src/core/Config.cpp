@@ -305,12 +305,44 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         if (!s.is_object()) continue;
         TrackerSensorConfig sc;
         sc.type = get_or<std::string>(s, "type", sc.type);
-        if (sc.type != "ir") sc.type = "radar";  // tolerant: anything but "ir" is a radar
+        // Tolerant: keep the recognized types; anything else falls back to a plain radar.
+        if (sc.type != "ir" && sc.type != "radar_pheno" && sc.type != "ir_pheno") {
+          sc.type = "radar";
+        }
         sc.pos = get_vec(s, "pos", sc.pos);
         sc.sigma_az = get_or<double>(s, "sigma_az", sc.sigma_az);
         sc.sigma_el = get_or<double>(s, "sigma_el", sc.sigma_el);
         sc.sigma_range = get_or<double>(s, "sigma_range", sc.sigma_range);
         sc.sigma_range_rate = get_or<double>(s, "sigma_range_rate", sc.sigma_range_rate);
+        // --- Phenomenology sub-blocks (issue #39); only consulted by the *_pheno types ---
+        if (s.contains("cfar") && s["cfar"].is_object()) {
+          const auto& cf = s["cfar"];
+          sc.cfar.pfa = get_or<double>(cf, "pfa", sc.cfar.pfa);
+          sc.cfar.num_ref_cells = get_or<int>(cf, "num_ref_cells", sc.cfar.num_ref_cells);
+        }
+        if (s.contains("radar") && s["radar"].is_object()) {
+          const auto& rd = s["radar"];
+          sc.radar.rcs_mean_m2 = get_or<double>(rd, "rcs_mean_m2", sc.radar.rcs_mean_m2);
+          sc.radar.swerling = get_or<int>(rd, "swerling", sc.radar.swerling);
+          sc.radar.range_ref_m = get_or<double>(rd, "range_ref_m", sc.radar.range_ref_m);
+          sc.radar.rcs_ref_m2 = get_or<double>(rd, "rcs_ref_m2", sc.radar.rcs_ref_m2);
+          sc.radar.snr_ref_db = get_or<double>(rd, "snr_ref_db", sc.radar.snr_ref_db);
+          sc.radar.clutter_cnr_db = get_or<double>(rd, "clutter_cnr_db", sc.radar.clutter_cnr_db);
+          sc.radar.jammer_jnr_db = get_or<double>(rd, "jammer_jnr_db", sc.radar.jammer_jnr_db);
+        }
+        if (s.contains("ir") && s["ir"].is_object()) {
+          const auto& ir = s["ir"];
+          sc.ir_pheno.netd_k = get_or<double>(ir, "netd_k", sc.ir_pheno.netd_k);
+          sc.ir_pheno.target_contrast_k =
+              get_or<double>(ir, "target_contrast_k", sc.ir_pheno.target_contrast_k);
+          sc.ir_pheno.range_ref_m = get_or<double>(ir, "range_ref_m", sc.ir_pheno.range_ref_m);
+          sc.ir_pheno.atm_extinction_per_m =
+              get_or<double>(ir, "atm_extinction_per_m", sc.ir_pheno.atm_extinction_per_m);
+          sc.ir_pheno.theta_resolution_rad =
+              get_or<double>(ir, "theta_resolution_rad", sc.ir_pheno.theta_resolution_rad);
+          sc.ir_pheno.centroid_gain =
+              get_or<double>(ir, "centroid_gain", sc.ir_pheno.centroid_gain);
+        }
         c.trackers.sensors.push_back(sc);
       }
     }

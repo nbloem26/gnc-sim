@@ -78,6 +78,17 @@ struct INavigator {
 // Sensor (external track sensor: radar / IR)
 // ---------------------------------------------------------------------------------------------
 
+// One detection look from a sensor (issue #39). A plain measurement sensor (radar/ir) always
+// "detects" and fills `z` from measure(); a phenomenology sensor (radar_pheno/ir_pheno) runs a
+// CA-CFAR front-end and may report detected=false (missed look — the tracker then coasts). snr_db
+// is a diagnostic (NaN-free) of the cell-under-test signal strength; 0 for non-phenomenology
+// sensors.
+struct SensorDetection {
+  bool detected = true;
+  std::vector<double> z;  // measurement vector (radar [az,el,range,range_rate] / ir [az,el])
+  double snr_db = 0.0;
+};
+
 // One fixed external sensor (ground radar / space IR) in the multi-tracker fusion path. Synthesizes
 // a noisy measurement of the target's absolute state from the sensor's fixed position, drawing
 // Gaussian noise from the run RNG (Box-Muller — parity-preserving). Radar -> [az,el,range,
@@ -87,6 +98,13 @@ struct ISensor {
   virtual std::vector<double> measure(const Vector3& tgt_pos, const Vector3& tgt_vel,
                                       Rng& rng) const = 0;
   virtual const TrackSensor& spec() const = 0;  // sensor parameters (type, position, noise sigmas)
+
+  // Signal->detection look. The default (plain measurement sensors) always detects and delegates to
+  // measure(), so its RNG draw order is unchanged. Phenomenology sensors override this to gate the
+  // measurement on a CA-CFAR detection. Returning detected=false means "no measurement this look".
+  virtual SensorDetection detect(const Vector3& tgt_pos, const Vector3& tgt_vel, Rng& rng) const {
+    return SensorDetection{true, measure(tgt_pos, tgt_vel, rng), 0.0};
+  }
 };
 
 // ---------------------------------------------------------------------------------------------

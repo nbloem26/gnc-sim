@@ -114,6 +114,35 @@ TEST(Registry, SensorKeysResolve) {
   auto ir_model = reg.makeSensor(ir);
   EXPECT_EQ(ir_model->spec().type, TrackSensorType::Ir);
   EXPECT_EQ(ir_model->measure({1000, 200, 50}, {-100, 0, 0}, rng).size(), 2u);  // az,el only
+
+  // Phenomenology types resolve to the right measurement kind and gate on a CFAR detection.
+  TrackerSensorConfig radar_p;
+  radar_p.type = "radar_pheno";
+  radar_p.pos = {0, 0, 0};
+  radar_p.radar.snr_ref_db = 40.0;  // strong signal -> reliable detection at the reference range
+  auto radar_p_model = reg.makeSensor(radar_p);
+  EXPECT_EQ(radar_p_model->spec().type, TrackSensorType::Radar);
+  const SensorDetection drp = radar_p_model->detect({10000, 0, 0}, {-100, 0, 0}, rng);
+  EXPECT_TRUE(drp.detected);
+  EXPECT_EQ(drp.z.size(), 4u);  // az,el,range,range_rate on a hit
+
+  TrackerSensorConfig ir_p;
+  ir_p.type = "ir_pheno";
+  ir_p.pos = {0, 0, 0};
+  ir_p.ir_pheno.target_contrast_k = 50.0;  // strong contrast -> reliable detection
+  auto ir_p_model = reg.makeSensor(ir_p);
+  EXPECT_EQ(ir_p_model->spec().type, TrackSensorType::Ir);
+  const SensorDetection dip = ir_p_model->detect({10000, 0, 0}, {-100, 0, 0}, rng);
+  EXPECT_TRUE(dip.detected);
+  EXPECT_EQ(dip.z.size(), 2u);  // az,el on a hit
+
+  // A vanishing signal (far range, tiny RCS) reliably misses -> the tracker coasts.
+  TrackerSensorConfig weak = radar_p;
+  weak.radar.snr_ref_db = -50.0;
+  auto weak_model = reg.makeSensor(weak);
+  const SensorDetection miss = weak_model->detect({1.0e7, 0, 0}, {-100, 0, 0}, rng);
+  EXPECT_FALSE(miss.detected);
+  EXPECT_TRUE(miss.z.empty());
 }
 
 // --- Dynamics / environment / threat keys resolve ------------------------------------------
