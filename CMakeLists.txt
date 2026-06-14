@@ -12,6 +12,7 @@ endif()
 
 option(GNCSIM_BUILD_TESTS "Build C++ unit tests" ON)
 option(GNCSIM_BUILD_CLI "Build the native CLI" ON)
+option(GNCSIM_BUILD_PYTHON "Build the pybind11 Python bindings (bindings/)" OFF)
 
 include(FetchContent)
 
@@ -32,6 +33,10 @@ if(NOT EMSCRIPTEN)
   if(GNCSIM_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+  endif()
+  # Python SDK (pybind11) — native-only client of the pure core, off by default (issue #32).
+  if(GNCSIM_BUILD_PYTHON)
+    add_subdirectory(bindings)
   endif()
 else()
   add_subdirectory(apps/wasm)
