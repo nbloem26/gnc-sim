@@ -77,12 +77,50 @@ flips sign post-CPA) is a possible future optimization if per-step cost becomes 
 performance issue #53) — but it must stay **opt-in** so default trajectories and golden baselines never
 change.
 
+## Tiered model fidelity (issue #50)
+
+As fidelity grows we protect two distinct guarantees by classifying every model the registry
+(`core/src/model/Registry.cpp`) resolves into one of two **tiers**. The classification is an
+authoritative manifest, [`configs/tiers.json`](../configs/tiers.json).
+
+| Tier | Where it runs | Guarantee | Enforced by |
+|---|---|---|---|
+| **fast** | WASM (interactive browser) + native | **native↔WASM parity** — `\|Δ\| = 0` within the parity tolerance | the **determinism guard** runs every fast-tier config through `scripts/parity-check.mjs` |
+| **hi-fi** | native (offline / Monte Carlo / V&V) | **golden regression net** | `postproc/gncpost/golden.py` baselines the hi-fi configs |
+
+Where a model has both, **config selects the tier**. The formalized fast/hi-fi pairs:
+
+| Family | fast | hi-fi |
+|---|---|---|
+| Dynamics | `3dof`, `6dof` | `6dof_hifi` (full inertia tensor + gyroscopic coupling) |
+| Navigation | `alpha_beta`, `ekf` | `imm` (interacting multiple model) |
+| Sensor | `radar`, `ir` | `radar_pheno`, `ir_pheno` (signal→CFAR phenomenology front-end) |
+| Environment | `flat`, `round` (central gravity) | `round` + EGM gravity / extended atmosphere (`ballistic_round_hifi`) |
+
+**The determinism guard** (`scripts/determinism-guard.mjs`, CI job `wasm-web`) is the enforcement
+mechanism. It reads `configs/tiers.json` and:
+
+1. runs **every** `fast_tier_configs` entry through the native↔WASM comparison and asserts parity
+   (`|Δ|` within tolerance, identical frame counts);
+2. asserts **every fast-tier model** is exercised by at least one fast-tier config (`config_models`),
+   so **parity coverage tracks the fast-tier model set** — adding a fast-tier model to the registry
+   without a parity-checked config that exercises it **fails the guard**;
+3. asserts each hi-fi config is present (it is golden-checked, not parity-guaranteed).
+
+The Python leg, `postproc/tests/test_tiers.py`, cross-checks the manifest against the shipped model
+set (via `gncpost.vnv.parse_shipped_models`): every shipped model must be tiered, every fast model
+must have a parity config, and every hi-fi config must be a real golden case. This catches tier drift
+in `pytest` without a WASM build. **New-model checklist:** classify the model in `configs/tiers.json`;
+if fast, add/extend a `fast_tier_configs` entry (and its `config_models` list); if hi-fi, add it to
+`golden.py` `CANONICAL` and re-baseline.
+
 ## Testing & CI
 
 - **C++**: GoogleTest via CTest — one suite per module + an integration/determinism suite (7 total).
 - **Python**: pytest over loaders, the USSA76/terminal-velocity/ballistic math, Allan slope recovery,
   and loop closure (27 tests).
 - **CI** (`.github/workflows/ci.yml`): native build + CTest → Python rigor → Emscripten WASM build →
-  native↔WASM parity → web build. Continuous build/test/deploy end to end.
+  native↔WASM parity → **determinism guard (fast-tier parity coverage)** → web build. Continuous
+  build/test/deploy end to end.
 
 See [DATA_CONTRACT.md](DATA_CONTRACT.md) for the schema shared across all four surfaces.

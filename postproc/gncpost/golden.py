@@ -189,6 +189,43 @@ CANONICAL: list[GoldenCase] = [
             "n": Tol(),
         },
     ),
+    # --- High-fidelity (native) tier (issue #50). These exercise the hi-fi models the determinism
+    #     guard does NOT parity-guarantee (6dof_hifi, EGM/extended-atmosphere round Earth, radar/IR
+    #     phenomenology). They are golden-checked here so the hi-fi tier has a regression net, exactly
+    #     as configs/tiers.json `hifi_configs` claims (asserted by postproc/tests/test_tiers.py). ---
+    GoldenCase(
+        "homing_6dof_hifi",
+        seed=1,
+        kind="single",
+        tols={
+            "miss_distance": Tol(abs=0.5, rel=0.05),
+            "intercept": Tol(),
+            "num_frames": Tol(),
+            "intercept_time": Tol(abs=0.05),
+        },
+    ),
+    GoldenCase(
+        "ballistic_round_hifi",
+        seed=1,
+        kind="single",
+        tols={
+            "miss_distance": Tol(rel=0.01),
+            "intercept": Tol(),
+            "num_frames": Tol(),
+            "intercept_time": Tol(abs=0.2),
+        },
+    ),
+    GoldenCase(
+        "track_phenomenology",
+        seed=7,
+        kind="single",
+        tols={
+            "miss_distance": Tol(abs=2.0, rel=0.10),
+            "intercept": Tol(),
+            "num_frames": Tol(),
+            "intercept_time": Tol(abs=0.1),
+        },
+    ),
 ]
 
 

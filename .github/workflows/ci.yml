@@ -122,6 +122,12 @@ jobs:
       - run: chmod +x build-native/apps/cli/gncsim
       - name: Native ↔ WASM parity check
         run: node scripts/parity-check.mjs configs/homing_3dof.json
+      # Determinism guard (issue #50): run EVERY fast-tier config (configs/tiers.json) through the
+      # native<->WASM comparison and assert |Δ| within parity tolerance, AND assert every fast-tier
+      # model is exercised by a parity-checked config (so parity coverage tracks the fast-tier set).
+      # Fails if a fast-tier model is added without a parity config, or a fast-tier config diverges.
+      - name: Determinism guard (fast-tier parity coverage)
+        run: node scripts/determinism-guard.mjs
       - uses: actions/setup-node@v5
         with: { node-version: '20' }
       - name: Build web app

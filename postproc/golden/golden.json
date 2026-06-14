@@ -12,6 +12,18 @@
       "schema_version": 1,
       "seed": 1
     },
+    "ballistic_round_hifi": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 0.0,
+        "intercept_time": 254.9088046261872,
+        "miss_distance": 480735.6617358273,
+        "num_frames": 14637.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
     "discrimination": {
       "kind": "single",
       "mc_cases": 0,
@@ -45,6 +57,18 @@
         "intercept_time": 14.024519842824688,
         "miss_distance": 0.000115232999095839,
         "num_frames": 2806.0
+      },
+      "schema_version": 1,
+      "seed": 1
+    },
+    "homing_6dof_hifi": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 13.64635875408158,
+        "miss_distance": 0.0005739618768820355,
+        "num_frames": 6825.0
       },
       "schema_version": 1,
       "seed": 1
@@ -92,6 +116,18 @@
         "intercept_time": 14.02463325079744,
         "miss_distance": 3.556971737229826,
         "num_frames": 2806.0
+      },
+      "schema_version": 1,
+      "seed": 7
+    },
+    "track_phenomenology": {
+      "kind": "single",
+      "mc_cases": 0,
+      "metrics": {
+        "intercept": 1.0,
+        "intercept_time": 14.025181757670392,
+        "miss_distance": 1.3485385409659456,
+        "num_frames": 2807.0
       },
       "schema_version": 1,
       "seed": 7
