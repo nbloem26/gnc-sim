@@ -53,6 +53,7 @@ If you add a model, add a row here too, or CI fails (see `AGENTS.md` → *Adding
 | Threat | `icbm` (`target.maneuver`) | Multi-stage boost: mass drops by the dry mass at each staging time; lofted boost-then-coast reaches an ICBM apogee/range band | `threat_suite_test::ThreatSuite.IcbmMassDropsAtStageTimes`, `threat_suite_test::ThreatSuite.IcbmReachesIcbmApogeeAndRangeBand`, `registry_test::Registry.ThreatKeysResolve` | — | — |
 | Threat | `hgv` (`target.maneuver`) | Lift/drag skip-glide: multiple altitude pull-ups; downrange increases with L/D | `threat_suite_test::ThreatSuite.HgvExhibitsSkipOscillation`, `threat_suite_test::ThreatSuite.HgvDownrangeScalesWithLiftToDrag` | — | — |
 | Threat | `rv_penaids` (`target.maneuver`) | Ballistic RV deploys penaids that separate and score as more penaid-like than the true RV | `threat_suite_test::ThreatSuite.RvPenaidsDeployAndAreScoredAgainstTrueRv`, `threat_suite_test::ThreatSuite.RvPenaidsThreatIsBallisticRv` | — | — |
+| BMC2 / C2 | `datalink` (`trackers.datalink`) | Zero latency+dropout reduces to the byte-identical cued run; increasing datalink latency degrades P(kill) monotonically; higher dropout degrades mean P(kill) (seed ensemble); the fused radar+IR network has lower miss / higher P(kill) than either single sensor; deterministic for a fixed seed under dropout | `bmc2_test::Bmc2Datalink.*`, `bmc2_test::Bmc2Network.FusedNetworkBeatsSingleSensor` | — | — |
 
 ## How to read a row
 

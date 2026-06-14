@@ -354,6 +354,26 @@ struct TrackAssociationConfig {
   double cso_separation_m = 80.0;  // characteristic cluster spread of the CSOs about the target [m]
 };
 
+// Battle-management / C2 fire-control datalink (issue #46). Opt-in, additive: models the comms link
+// carrying the FUSED track picture from the sensor network → C2 → interceptor. When disabled
+// (default) the interceptor's cue/guidance consume the freshly fused estimate every step exactly as
+// before (byte-identical). When enabled, the delivered track is:
+//   - DELAYED by `latency_s` (rounded to whole steps): the cued/guidance picture is stale by the
+//     transport + processing lag, so the interceptor steers off where the threat WAS, not where it
+//     is. Against a fast/maneuvering threat this stale lead degrades P(kill).
+//   - DROPPED with probability `dropout_prob` each step (a seeded Rng Bernoulli draw — project Rng,
+//     no std distribution): on a dropped message the last successfully delivered estimate is HELD
+//     (coasted), ageing the picture further until the next message arrives.
+// The C2 launch decision and terminal guidance both run on this delivered (delayed/dropped)
+// picture. The dropout draw is taken once per step ONLY when the datalink is enabled (which itself
+// requires trackers enabled), so the default RNG draw order — and every existing tracker/cueing run
+// — is untouched.
+struct DatalinkConfig {
+  bool enabled = false;
+  double latency_s = 0.0;     // sensor→C2→interceptor transport + processing delay [s]
+  double dropout_prob = 0.0;  // per-step message-loss probability (0..1); lost => hold last picture
+};
+
 // Multi-sensor target-track fusion (issue #5). Opt-in: when disabled (default) nothing changes and
 // the default single-seeker navigation path is byte-identical. When enabled, the Runner builds a
 // TargetTrackEkf, synthesizes a noisy measurement from each sensor each step, fuses them
@@ -363,6 +383,7 @@ struct TrackersConfig {
   double process_psd = 50.0;  // target-accel PSD q [m^2/s^3] per axis (nearly-constant-velocity Q)
   std::vector<TrackerSensorConfig> sensors;
   TrackAssociationConfig association;  // multi-target data association mode (issue #38)
+  DatalinkConfig datalink;             // fire-control C2 datalink latency / dropout (issue #46)
 };
 
 // Seeker target-discrimination against decoys / closely-spaced objects (issue #6). Opt-in: when

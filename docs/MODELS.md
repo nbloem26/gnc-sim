@@ -489,3 +489,58 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
 - **References.** Hosein & Athans, *Weapon-target assignment* (preferential defense); Bertsekas,
   *Auction algorithms* for assignment; Carleton damage function / Gaussian lethality (Driels,
   *Weaponeering*); shoot-look-shoot fire doctrine (Wagner et al., *Naval Operations Analysis*).
+
+## Battle management / C2 (sensor tasking + datalink)
+
+> **Not a Registry model.** The battle-management layer is **scenario-level orchestration** layered
+> onto the existing fused-track (issue #5) + cueing/launch-on-track (issue #8) paths, not a key
+> resolved by `Registry.cpp`. Its evidence is the GoogleTest suite `tests/bmc2_test.cpp`. It is
+> opt-in via `trackers.datalink.enabled`; with the datalink disabled (default) the fused picture
+> feeds the cue/guidance every step exactly as before and every existing run is **byte-identical**.
+
+### `datalink` — Fire-control C2 datalink latency + dropout
+
+- **Assumptions.** Opt-in via `trackers.datalink.enabled` (issue #46, requires `trackers.enabled`).
+  The sensor network (ground radar + space IR, fused by the `TargetTrackEkf`/JPDA stack into one
+  track picture) feeds the **C2 decision** (launch-on-track) and **terminal guidance** through a
+  comms link with a finite transport+processing **latency** and stochastic message **dropout**. The
+  fused estimate is the *truth-ish* picture; what the interceptor actually consumes is the
+  **delivered** picture: delayed and, on a lost message, **stale** (the last delivered picture is
+  held). The C2 launch criterion (track-covariance trace or timeout) is unchanged — what degrades is
+  the *aim*: the constant-velocity lead solution and PN/APN both steer off where the threat **was**.
+- **Governing equations.** With step `dt_s` and configured `latency_s`, the delivered estimate at
+  step `k` is the offered fused estimate from `n = round(latency_s / dt_s)` steps earlier:
+  `x_delivered[k] = x_fused[k − n]` (a FIFO delay line). Each step a Bernoulli **dropout** is drawn
+  from the seeded project `Rng`: with probability `dropout_prob` the message is lost and the held
+  picture is reused, `x_delivered[k] = x_delivered_last`, ageing the picture by another `dt_s`. The
+  cue and the engagement geometry `est = computeEngagement(veh, target@x_delivered)` both run on this
+  delivered state; the analytic-CPA **miss** (and the Gaussian-lethality single-shot
+  `Pssk = pk_max·exp(−½(miss/pk_sigma_m)²)`) are always scored against the **true** threat, so a
+  stale picture shows up directly as a larger miss / lower P(kill).
+- **Behaviour (representative sweep, `bmc2_datalink`-class geometry, weaving threat).** A staler
+  picture monotonically degrades P(kill); the fused network beats either single sensor:
+
+  | latency_s (no dropout) | miss [m] | P(kill) | intercept |
+  |---|---|---|---|
+  | 0.00 | 2.56 | 0.834 | ✓ |
+  | 0.10 | 15.94 | 0.006 | ✗ |
+  | 0.20 | 31.05 | 0.000 | ✗ |
+  | 0.40 | 60.32 | 0.000 | ✗ |
+  | 0.80 | 118.80 | 0.000 | ✗ |
+  | 1.50 | 215.11 | 0.000 | ✗ |
+
+  Dropout (latency_s = 0.10, mean over 40 seeds): mean miss 15.22 → 15.58 → 16.30 → 20.89 m as
+  `dropout_prob` rises 0.0 → 0.3 → 0.6 → 0.9. Network vs single sensor (fresh link): radar-only miss
+  3.67 m (P(kill) 0.725, no intercept), IR-only (angles-only, no range) 470.7 m, **fused network
+  2.56 m (P(kill) 0.834, intercept)**.
+- **Validity limits.** The latency is a fixed transport+processing delay rounded to whole steps (no
+  jitter distribution, no bandwidth/queueing model); dropout is an i.i.d. per-step Bernoulli (no
+  burst-loss correlation). A held message coasts the *last delivered estimate*, not a model-based
+  extrapolation of it. The link carries the already-fused picture (it does not re-task or schedule
+  individual sensors mid-engagement). Determinism/parity: the single dropout draw lives entirely
+  inside the opt-in branch (default RNG order untouched), uses the project `Rng` only (no `std`
+  distribution), and `round()`/`floor()` (libm) is used only on this new opt-in path → native↔WASM
+  identical.
+- **References.** Stale-track / latency effects on fire-control quality (Blackman & Popoli,
+  *Design and Analysis of Modern Tracking Systems*, track-to-track + network-level chapters);
+  Carleton/Gaussian lethality (Driels, *Weaponeering*).
