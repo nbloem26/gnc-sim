@@ -48,8 +48,9 @@ and re-baseline golden runs in the same change.
 | `web/` | Next.js + React. `app/page.tsx` (tabs), `components/` (per-subsystem panels), `lib/wasmRunner.ts`. |
 | `configs/` | 18 scenario presets (the data contract in practice). Start here to understand inputs. |
 | `matlab/` | Reference analysis scripts (Octave fallback). Not CI-executed. |
-| `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence). |
-| `scripts/` | `build-native.sh`, `build-wasm.sh`, `parity-check.mjs`. |
+| `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `THEORY.md` (the math behind every shipped model + worked CLI/SDK example), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence), `Doxyfile` (C++ API reference — `doxygen docs/Doxyfile`). |
+| `bindings/` | Python SDK (pybind11): `gncsim.run` / `gncsim.monte_carlo` → numpy. `bindings/README.md` is the API reference; built by `scripts/build-python.sh`. |
+| `scripts/` | `build-native.sh`, `build-wasm.sh`, `build-python.sh`, `parity-check.mjs`. |
 
 ## Build / test / run — exact commands
 

@@ -1,5 +1,8 @@
-// gnc-sim — shared simulation types. The `Frame` struct IS the telemetry data contract in code;
-// see docs/DATA_CONTRACT.md. Field names here must match the CSV columns and JSON keys exactly.
+/// @file Types.hpp
+/// @brief Shared simulation types — `EntityState`, `Frame`, `SimResult`, geodetic origin.
+///
+/// The `Frame` struct IS the telemetry data contract in code; see docs/DATA_CONTRACT.md. Field
+/// names here must match the CSV columns and JSON keys exactly.
 #pragma once
 
 #include <cstdint>

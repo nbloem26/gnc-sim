@@ -1,6 +1,10 @@
-// gnc-sim — top-level simulation entry. Pure (no file I/O) so it runs identically native & WASM.
-// The CLI and the WASM embind wrapper both call runSimulation(). Phase 2 (integration) owns the
-// real implementation in core/src/scenario/Runner.cpp.
+/// @file Runner.hpp
+/// @brief Top-level simulation entry — the public `runSimulation()` / Monte Carlo API.
+///
+/// Pure (no file I/O) so it runs identically native & WASM. The CLI and the WASM embind
+/// wrapper both call runSimulation(). Phase 2 (integration) owns the implementation in
+/// core/src/scenario/Runner.cpp. See docs/THEORY.md for the per-step GNC loop and
+/// docs/DATA_CONTRACT.md for the result schema.
 #pragma once
 
 #include <cstdint>
@@ -12,10 +16,12 @@
 
 namespace gncsim {
 
-// Run one simulation to completion, returning the full in-memory telemetry + outcome.
+/// @brief Run one simulation to completion, returning the full in-memory telemetry + outcome.
+/// @param cfg Fully-parsed simulation config (see SimConfig / docs/DATA_CONTRACT.md).
+/// @return The SimResult: scalar outcome (miss distance, intercept) plus per-frame telemetry.
 SimResult runSimulation(const SimConfig& cfg);
 
-// One Monte Carlo case outcome (no telemetry — just the summary row).
+/// @brief One Monte Carlo case outcome (no telemetry — just the summary row).
 struct MonteCarloCase {
   int index = 0;
   std::uint64_t seed = 0;

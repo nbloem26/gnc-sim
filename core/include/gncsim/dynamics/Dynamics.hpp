@@ -1,6 +1,9 @@
-// gnc-sim — rigid-body equations of motion + integration. The Runner computes total external
-// world-frame force (aero + thrust) and gravity, then calls these to advance one step.
-// Phase 1 (dynamics) owns the implementations in core/src/dynamics/.
+/// @file Dynamics.hpp
+/// @brief Rigid-body equations of motion + integration (`3dof`, `6dof`).
+///
+/// The Runner computes the total external world-frame force (aero + thrust) and gravity, then
+/// calls these to advance one step. Phase 1 (dynamics) owns the implementations in
+/// core/src/dynamics/. Governing equations: docs/THEORY.md §2.
 #pragma once
 
 #include "gncsim/core/Config.hpp"
@@ -9,14 +12,18 @@
 
 namespace gncsim {
 
-// Advance translational state (pos, vel) one step. `force_world` excludes gravity; `gravity`
-// is the acceleration vector [m/s^2]. Attitude/angular fields are passed through unchanged.
+/// @brief Advance translational point-mass state (pos, vel) one step (`3dof`).
+/// @param force_world External world-frame force [N], excluding gravity (aero + thrust).
+/// @param gravity Gravitational acceleration [m/s²]. Attitude/angular fields pass through
+/// unchanged.
 EntityState step3dof(const EntityState& s, const Vector3& force_world, const Vector3& gravity,
                      double dt, Integrator integ);
 
-// Advance full 6DOF state (pos, vel, attitude quaternion, body angular rate). `moment_body` is
-// the control+aero moment [N*m]; `inertia` is a scalar moment-of-inertia proxy. Quaternion is
-// renormalized after the step.
+/// @brief Advance full 6DOF state (pos, vel, attitude quaternion, body rate) one step (`6dof`).
+///
+/// `moment_body` is the control+aero moment [N·m]; `inertia` is a scalar moment-of-inertia proxy
+/// (no gyroscopic coupling — that lives in Dynamics6dofHiFi.hpp). The quaternion is renormalized
+/// after the step.
 EntityState step6dof(const EntityState& s, const Vector3& force_world, const Vector3& moment_body,
                      double inertia, const Vector3& gravity, double dt, Integrator integ);
 

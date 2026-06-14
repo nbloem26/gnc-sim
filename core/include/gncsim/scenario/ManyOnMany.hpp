@@ -1,3 +1,10 @@
+/// @file ManyOnMany.hpp
+/// @brief Many-on-many engagement campaign (issue #45) — WTA + salvo/SLS/raid doctrines.
+///
+/// Scenario-level orchestration that reuses the per-engagement physics; the P(kill), WTA and
+/// doctrine equations are in docs/THEORY.md §9. Opt-in and additive: the default
+/// single-engagement path stays byte-identical.
+//
 // gnc-sim — many-on-many engagement campaign (issue #45): N interceptors vs M threats,
 // weapon-target assignment (WTA), and the salvo / shoot-look-shoot / raid doctrines. This is a
 // SCENARIO-level orchestration layer that REUSES the per-engagement physics: every

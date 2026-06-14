@@ -1,16 +1,20 @@
-// gnc-sim — generic fixed-step integrators (RK4, RK2/midpoint, Euler).
-// State must support: operator+(State), operator*(double).  Deriv is callable as f(t,
-// State)->State.
+/// @file Integrators.hpp
+/// @brief Generic fixed-step ODE integrators (RK4, RK2/midpoint, Euler).
+///
+/// `State` must support `operator+(State)` and `operator*(double)`; `Deriv` is callable as
+/// `f(t, State) -> State`. Fixed step (not adaptive) is a determinism requirement — see
+/// docs/THEORY.md §2.1. RK4 is the default.
 #pragma once
 
 namespace gncsim {
 
+/// @brief One forward-Euler step, @f$O(\Delta t)@f$.
 template <typename State, typename Deriv>
 State eulerStep(const State& y, double t, double dt, Deriv f) {
   return y + f(t, y) * dt;
 }
 
-// Explicit midpoint (RK2).
+/// @brief One explicit-midpoint (RK2) step, @f$O(\Delta t^2)@f$.
 template <typename State, typename Deriv>
 State rk2Step(const State& y, double t, double dt, Deriv f) {
   const State k1 = f(t, y);
@@ -18,7 +22,7 @@ State rk2Step(const State& y, double t, double dt, Deriv f) {
   return y + k2 * dt;
 }
 
-// Classic 4th-order Runge-Kutta.
+/// @brief One classic 4th-order Runge-Kutta step, global error @f$O(\Delta t^4)@f$ (the default).
 template <typename State, typename Deriv>
 State rk4Step(const State& y, double t, double dt, Deriv f) {
   const State k1 = f(t, y);
