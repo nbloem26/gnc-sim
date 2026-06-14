@@ -34,6 +34,13 @@ option(GNCSIM_COVERAGE "Build native targets with gcov coverage instrumentation"
 # libFuzzer config-loader harness (fuzz/). Requires Clang. Off by default; never affects the
 # default build or CTest (the portable fallback lives in tests/config_fuzz_stress_test.cpp).
 option(GNCSIM_FUZZ "Build the libFuzzer config-loader harness (requires Clang)" OFF)
+# Real-network UDP transport for the DIS federation leg (issue #47). Off by default so the default
+# build pulls in no socket headers and binds no port; the hermetic loopback transport + tests are
+# always available. Enable for an actual IEEE-1278 wire (POSIX hosts only).
+option(GNCSIM_INTEROP_UDP "Build the POSIX UDP transport for the DIS interop leg" OFF)
+if(GNCSIM_INTEROP_UDP AND NOT EMSCRIPTEN)
+  add_compile_definitions(GNCSIM_INTEROP_UDP)
+endif()
 
 if(GNCSIM_SANITIZE AND NOT EMSCRIPTEN)
   message(STATUS "gnc-sim: enabling sanitizers: ${GNCSIM_SANITIZE}")

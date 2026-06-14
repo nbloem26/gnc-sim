@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -14,6 +15,9 @@
 
 #include "gncsim/core/Config.hpp"
 #include "gncsim/core/Serialize.hpp"
+#include "gncsim/interop/Federation.hpp"
+#include "gncsim/interop/MessageBus.hpp"
+#include "gncsim/interop/Recording.hpp"
 #include "gncsim/scenario/ManyOnMany.hpp"
 #include "gncsim/scenario/Runner.hpp"
 
@@ -96,6 +100,9 @@ int main(int argc, char** argv) {
     const std::string seed_override = arg(argc, argv, "--seed", "");
     const std::string json_path = arg(argc, argv, "--json", "");  // also emit WASM-format JSON
     const std::string workers_str = arg(argc, argv, "--workers", "1");  // MC thread-pool size
+    // Opt-in distributed-federation recording (issue #47): drain the run onto the message bus and
+    // record every per-step snapshot to a replayable .gncr file. Empty (default) = no federation.
+    const std::string federation_record = arg(argc, argv, "--federation-record", "");
     const bool checkpoint =
         !arg(argc, argv, "--checkpoint", "").empty() || arg(argc, argv, "--resume", "") == "1";
     const int num_workers = std::stoi(workers_str);
@@ -259,6 +266,23 @@ int main(int argc, char** argv) {
     writeFile(out_dir + "/manifest.json", gncsim::toManifestJson(result, config_text));
     if (!json_path.empty()) {
       writeFile(json_path, gncsim::toJsonString(result));  // identical shape to the WASM output
+    }
+
+    // Opt-in federation recording: publish the run's per-step entity/track snapshots onto the
+    // message bus through a deterministic FileRecorder and write the replayable recording. This is
+    // driver-side I/O (never the pure core); the bus/adapters live in the interop module.
+    if (!federation_record.empty()) {
+      namespace ip = gncsim::interop;
+      auto recorder = std::make_shared<ip::FileRecorder>();
+      ip::MessageBus bus;
+      bus.attach(recorder);
+      bus.start(/*exercise_id=*/1, /*site_id=*/1, /*app_id=*/1);
+      const auto snaps = ip::snapshotsFromResult(result);
+      for (const auto& s : snaps) bus.publish(s);
+      bus.stop();
+      recorder->writeToFile(federation_record);
+      std::cout << "federation: recorded " << snaps.size() << " snapshots ("
+                << recorder->bytes().size() << " bytes) to " << federation_record << "\n";
     }
 
     std::cout << "scenario=" << result.scenario << " model=" << result.model
