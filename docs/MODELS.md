@@ -443,3 +443,49 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   separation); see also the `decoys` discrimination model.
 </content>
 </invoke>
+
+---
+
+## Engagement campaigns
+
+> **Not a Registry model.** The campaign layer is **scenario-level orchestration**
+> (`core/src/scenario/ManyOnMany.cpp`), not a key resolved by `Registry.cpp`, so it adds **no**
+> V&V-matrix row. Its evidence is the GoogleTest suite `tests/many_on_many_test.cpp`. The
+> per-engagement physics it orchestrates is the same `runSimulation()` documented above; nothing
+> here changes a single-engagement run (the default path is byte-identical).
+
+### `many_on_many` — N interceptors vs M threats (salvo / shoot-look-shoot / raid) + WTA
+
+- **Assumptions.** Opt-in via `many_on_many.enabled` (issue #45). The campaign scores every
+  interceptor×threat pairing by running the *same* deterministic `runSimulation()` (the
+  interceptor's launch spec drives `vehicle`, the threat spec drives `target`), converts the
+  analytic CPA **miss distance** into a **single-shot P(kill)** with a Gaussian lethality (Carleton)
+  damage function, solves a deterministic **weapon-target assignment (WTA)** that maximizes expected
+  kills, and plays out a doctrine. Threats are treated as **independent** for the campaign rollup
+  (per-threat kill probabilities multiply); each interceptor is a single round (expended on firing).
+- **Governing equations.**
+  - Single-shot kill: `Pssk = pk_max · exp(−½ (miss / pk_sigma_m)²)`.
+  - Cumulative kill of `k` independent shots on one threat: `Pk = 1 − ∏ᵢ (1 − Psski)`.
+  - WTA (greedy): repeatedly commit the highest-`Pssk` remaining `(weapon, threat)` pairing, one
+    weapon per threat per wave; ties broken by lowest index → deterministic. The `auction` variant
+    is a Bertsekas ascending-price auction over the same P(kill) matrix and reaches the same optimal
+    one-to-one matching on a clean matrix.
+  - Doctrines: **salvo** commits `shots_per_threat` weapons to each threat at once; **shoot-look-
+    shoot** fires one weapon per surviving threat per wave, *assesses* the outcome (a threat is
+    assessed killed once its cumulative `Pk ≥ 0.5`), and re-engages only survivors for up to
+    `max_waves` waves; **raid** defends against `M` threats with a finite inventory, surplus weapons
+    backing up the threats round-robin via repeated WTA passes.
+  - Rollup: `leakers` = threats with cumulative `Pk < 0.5`; `expected_leakage = Σ(1 − Pkₜ)`;
+    `P(raid annihilation) = ∏ₜ Pkₜ`. With `num_trials > 1` each committed shot's kill is a Bernoulli
+    draw from a seeded project `Rng` (no `std` distribution → native↔WASM identical), giving a Monte
+    Carlo `mean_leakage` and `P(annihilation)`.
+- **Validity limits.** The P(kill) is a function of the deterministic CPA miss only — there is no
+  fuzing/fragmentation model, no shot-to-shot correlation, and no inter-threat coupling (each
+  pairing is an independent engagement; threats do not interact or shadow one another). Salvo/raid
+  assignment is one weapon per threat per wave (no simultaneous multi-weapon optimization within a
+  wave). Shoot-look-shoot assessment is a P(kill) threshold, not a sensed kill verdict. The campaign
+  is **CLI/SDK-only** (it is not exposed through the single-engagement WASM `run_sim` entry), so
+  WASM parity is unaffected.
+- **References.** Hosein & Athans, *Weapon-target assignment* (preferential defense); Bertsekas,
+  *Auction algorithms* for assignment; Carleton damage function / Gaussian lethality (Driels,
+  *Weaponeering*); shoot-look-shoot fire doctrine (Wagner et al., *Naval Operations Analysis*).

@@ -424,6 +424,72 @@ struct MonteCarloConfig {
   double target_pos_sigma = 0.0;
 };
 
+// One threat (raider) in a many-on-many engagement (issue #45). Each is a full target spec:
+// its launch state + maneuver, plus a release time so a raid can arrive staggered. The campaign
+// runs each interceptor-vs-threat pairing through the SAME per-engagement physics (runSimulation),
+// so a threat carries everything TargetConfig does — only the fields most useful per-raider are
+// surfaced here; everything else inherits the base `target` block.
+struct ManyThreatSpec {
+  Vector3 pos0_m{12000.0, 0.0, 4000.0};  // threat initial ENU position [m]
+  Vector3 vel0_mps{-300.0, 0.0, -40.0};  // threat initial ENU velocity [m/s]
+  std::string maneuver = "constant";     // reuse TargetConfig maneuver strings
+  double maneuver_g = 0.0;               // lateral accel for weave [g]
+  double maneuver_freq_hz = 0.4;         // weave frequency [Hz]
+  double release_time_s = 0.0;  // raid stagger: when this raider "arrives" [s] (bookkeeping)
+  double value = 1.0;           // target value weight for WTA (defended-asset lethality)
+};
+
+// One interceptor (weapon) in a many-on-many engagement (issue #45). Each is a launch-site +
+// launch-kinematics spec; the rest of the airframe / guidance / aero inherits the base config so a
+// salvo of identical interceptors is just N entries with the same numbers. An interceptor is a
+// single round: once expended (assigned + fired) it is gone.
+struct ManyInterceptorSpec {
+  Vector3 pos0_m{0.0, 0.0, 0.0};       // launch-site ENU position [m]
+  double launch_speed_mps = 1100.0;    // [m/s]
+  double launch_elevation_deg = 42.0;  // above horizon
+  double launch_azimuth_deg = 0.0;     // from East toward North
+};
+
+// Many-on-many engagement campaign (issue #45). Opt-in, additive: disabled by default so the
+// single-engagement runSimulation path is byte-identical and never touched. When enabled, the
+// campaign driver (core/src/scenario/ManyOnMany.cpp) forms an interceptor-vs-threat pairing matrix,
+// scores each pairing with the SAME per-engagement physics (runSimulation -> miss distance -> a
+// lethality P(kill) model), solves a deterministic weapon-target assignment (WTA) maximizing
+// expected kills, and plays out a doctrine:
+//   - "salvo"             : shots_per_threat interceptors committed to each threat at once.
+//   - "shoot_look_shoot"  : engage a wave, ASSESS outcomes, RE-ENGAGE only the survivors, up to
+//                           max_waves waves (each wave is one shot per surviving threat).
+//   - "raid"              : many threats (possibly staggered by release_time_s) defended against a
+//                           finite interceptor inventory via WTA; leakage = threats that survive.
+// The driver rolls up campaign metrics: leakage (threats surviving), interceptors expended, and the
+// probability of raid annihilation (all threats killed). Deterministic given seed (project Rng; the
+// shoot-look-shoot kill assessment draws from a seeded Rng, NO std distributions).
+struct ManyOnManyConfig {
+  bool enabled = false;
+  std::string doctrine = "salvo";     // "salvo" | "shoot_look_shoot" | "raid"
+  std::string wta_method = "greedy";  // "greedy" | "auction" (both maximize expected kills)
+
+  std::vector<ManyInterceptorSpec> interceptors;  // weapon inventory
+  std::vector<ManyThreatSpec> threats;            // raiders
+
+  int shots_per_threat = 1;  // "salvo": interceptors committed per threat
+  int max_waves = 3;         // "shoot_look_shoot": max re-engagement waves
+
+  // Lethality model: a single-shot P(kill) from the pairing's analytic CPA miss distance,
+  //   Pssk = pk_max * exp(-0.5 * (miss / pk_sigma_m)^2),
+  // a standard Gaussian (Carleton) damage function. A larger pk_sigma_m models a bigger lethal
+  // radius / warhead. The salvo cumulative kill probability against one threat with k independent
+  // shots is 1 - prod(1 - Pssk_i).
+  double pk_sigma_m = 5.0;  // lethality 1-sigma radius [m]
+  double pk_max = 0.95;     // ceiling single-shot P(kill) at zero miss (reliability < 1)
+
+  // Monte Carlo campaign trials: P(raid annihilation) and mean leakage are estimated over
+  // num_trials stochastic realizations (each pairing's kill is a Bernoulli draw at its Pssk). 0 or
+  // 1
+  // => a single deterministic expected-value rollup (no kill sampling). Deterministic given seed.
+  int num_trials = 0;
+};
+
 struct SimConfig {
   std::string scenario = "homing";
   std::string model = "3dof";  // "3dof" | "6dof" | "6dof_hifi" (issue #35)
@@ -447,6 +513,7 @@ struct SimConfig {
   DecoysConfig decoys;
   CueingConfig cueing;
   MonteCarloConfig monte_carlo;
+  ManyOnManyConfig many_on_many;
 };
 
 // Parse a JSON document (tolerant: missing keys fall back to struct defaults).

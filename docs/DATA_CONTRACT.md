@@ -81,9 +81,29 @@ config is valid. Shape (defaults shown):
   "cueing":   { "enabled": false, "launch_criterion": "track_cov", "cov_trace_threshold": 1.0e4,
                 "max_cue_time": 10.0, "loft_deg": 0.0 },   // launch-on-track (needs trackers)
   "monte_carlo": { "num_cases": 0, "launch_speed_sigma": 0.0,
-                   "launch_elevation_sigma_deg": 0.0, "target_pos_sigma": 0.0 }
+                   "launch_elevation_sigma_deg": 0.0, "target_pos_sigma": 0.0 },
+  "many_on_many": { "enabled": false, "doctrine": "salvo", "wta_method": "greedy",
+                    "shots_per_threat": 1, "max_waves": 3,
+                    "pk_sigma_m": 5.0, "pk_max": 0.95, "num_trials": 0,
+                    "interceptors": [ /* { pos0_m, launch_speed_mps, launch_elevation_deg,
+                                           launch_azimuth_deg } */ ],
+                    "threats":      [ /* { pos0_m, vel0_mps, maneuver, maneuver_g,
+                                           maneuver_freq_hz, release_time_s, value } */ ] }
 }
 ```
+
+The `many_on_many` block (default `enabled:false`) is the opt-in **engagement campaign** (issue #45):
+`N` interceptors vs `M` threats with **weapon-target assignment** and the **salvo / shoot_look_shoot
+/ raid** doctrines. It is **scenario-level orchestration** that reuses the per-engagement physics —
+each interceptor×threat pairing is scored by running the same `runSimulation()` and mapping the CPA
+miss to a single-shot P(kill). It is **CLI/SDK-only** (not part of the WASM `run_sim` single-engagement
+entry), so it changes no telemetry series and does not affect native↔WASM parity. When enabled the
+native CLI writes campaign artifacts instead of a single run's telemetry: `pairings.csv`
+(`interceptor,threat,miss_distance_m,p_kill`), `assignments.csv` (`interceptor,threat,p_kill`),
+`threats.csv` (`threat,shots_committed,cumulative_pk,killed`), and `campaign.json` (the rolled-up
+metrics: `interceptors_expended`, `leakers`, `expected_leakage`, `expected_kills`,
+`p_raid_annihilation`, plus Monte-Carlo `mean_leakage` / `mc_p_annihilation` when `num_trials > 1`).
+See [MODELS.md](MODELS.md#many_on_many--n-interceptors-vs-m-threats-salvo--shoot-look-shoot--raid--wta).
 
 The `trackers` block (default `enabled:false`) is the opt-in **multi-sensor target-track fusion**
 path. When enabled, the Runner builds a `TargetTrackEkf` (absolute 6-state target track in ENU,

@@ -14,6 +14,7 @@
 
 #include "gncsim/core/Config.hpp"
 #include "gncsim/core/Serialize.hpp"
+#include "gncsim/scenario/ManyOnMany.hpp"
 #include "gncsim/scenario/Runner.hpp"
 
 namespace {
@@ -112,6 +113,75 @@ int main(int argc, char** argv) {
     }
 
     ensureDir(out_dir);
+
+    // Many-on-many engagement campaign (issue #45): orchestrate N interceptors vs M threats with
+    // weapon-target assignment + the chosen doctrine, write a per-pairing P(kill) matrix, the
+    // assignment, per-threat outcomes, and the rolled-up campaign metrics (leakage, interceptors
+    // expended, P(raid annihilation)). Reuses the per-engagement physics; the single-engagement and
+    // Monte-Carlo paths below are untouched.
+    if (cfg.many_on_many.enabled) {
+      const gncsim::CampaignResult camp = gncsim::runManyOnMany(cfg);
+
+      // pairings.csv: interceptor,threat,miss_distance_m,p_kill
+      {
+        std::ostringstream pp;
+        pp.precision(9);
+        pp << "interceptor,threat,miss_distance_m,p_kill\n";
+        for (const auto& p : camp.pairings) {
+          pp << p.interceptor_index << ',' << p.threat_index << ',' << p.miss_distance_m << ','
+             << p.p_kill << '\n';
+        }
+        writeFile(out_dir + "/pairings.csv", pp.str());
+      }
+      // assignments.csv: interceptor,threat,p_kill
+      {
+        std::ostringstream as;
+        as.precision(9);
+        as << "interceptor,threat,p_kill\n";
+        for (const auto& a : camp.assignments) {
+          as << a.interceptor_index << ',' << a.threat_index << ',' << a.p_kill << '\n';
+        }
+        writeFile(out_dir + "/assignments.csv", as.str());
+      }
+      // threats.csv: threat,shots_committed,cumulative_pk,killed
+      {
+        std::ostringstream th;
+        th.precision(9);
+        th << "threat,shots_committed,cumulative_pk,killed\n";
+        for (const auto& o : camp.threats) {
+          th << o.threat_index << ',' << o.shots_committed << ',' << o.cumulative_pk << ','
+             << (o.killed ? 1 : 0) << '\n';
+        }
+        writeFile(out_dir + "/threats.csv", th.str());
+      }
+      // campaign.json: the rolled-up metrics.
+      {
+        std::ostringstream cj;
+        cj.precision(9);
+        cj << "{\n"
+           << "  \"doctrine\": \"" << camp.doctrine << "\",\n"
+           << "  \"num_interceptors\": " << camp.num_interceptors << ",\n"
+           << "  \"num_threats\": " << camp.num_threats << ",\n"
+           << "  \"interceptors_expended\": " << camp.interceptors_expended << ",\n"
+           << "  \"leakers\": " << camp.leakers << ",\n"
+           << "  \"expected_leakage\": " << camp.expected_leakage << ",\n"
+           << "  \"expected_kills\": " << camp.expected_kills << ",\n"
+           << "  \"p_raid_annihilation\": " << camp.p_raid_annihilation << ",\n"
+           << "  \"mean_leakage\": " << camp.mean_leakage << ",\n"
+           << "  \"mc_p_annihilation\": " << camp.mc_p_annihilation << "\n"
+           << "}\n";
+        writeFile(out_dir + "/campaign.json", cj.str());
+      }
+
+      std::cout << "many-on-many: doctrine=" << camp.doctrine
+                << " interceptors=" << camp.num_interceptors << " threats=" << camp.num_threats
+                << "\n"
+                << "  expended=" << camp.interceptors_expended << " leakers=" << camp.leakers
+                << " p_annihilation=" << camp.mc_p_annihilation
+                << " mean_leakage=" << camp.mean_leakage << "\n"
+                << "wrote " << out_dir << "/{pairings,assignments,threats}.csv + campaign.json\n";
+      return 0;
+    }
 
     // Monte Carlo batch: write summary.csv (one row/case) + full telemetry for case 0. With
     // --workers K the cases run on a K-thread pool; the result is bit-identical to the serial

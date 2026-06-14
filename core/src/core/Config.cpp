@@ -411,6 +411,47 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         get_or<double>(m, "target_pos_sigma", c.monte_carlo.target_pos_sigma);
   }
 
+  // --- Many-on-many engagement campaign (issue #45). Opt-in; absent block => disabled. ---
+  if (j.contains("many_on_many")) {
+    const auto& mm = j["many_on_many"];
+    auto& cfg = c.many_on_many;
+    cfg.enabled = get_or<bool>(mm, "enabled", cfg.enabled);
+    cfg.doctrine = get_or<std::string>(mm, "doctrine", cfg.doctrine);
+    // Tolerant: unknown doctrine strings fall back to the salvo default.
+    if (cfg.doctrine != "shoot_look_shoot" && cfg.doctrine != "raid") cfg.doctrine = "salvo";
+    cfg.wta_method = get_or<std::string>(mm, "wta_method", cfg.wta_method);
+    if (cfg.wta_method != "auction") cfg.wta_method = "greedy";
+    cfg.shots_per_threat = get_or<int>(mm, "shots_per_threat", cfg.shots_per_threat);
+    cfg.max_waves = get_or<int>(mm, "max_waves", cfg.max_waves);
+    cfg.pk_sigma_m = get_or<double>(mm, "pk_sigma_m", cfg.pk_sigma_m);
+    cfg.pk_max = get_or<double>(mm, "pk_max", cfg.pk_max);
+    cfg.num_trials = get_or<int>(mm, "num_trials", cfg.num_trials);
+
+    if (mm.contains("interceptors") && mm["interceptors"].is_array()) {
+      for (const auto& iv : mm["interceptors"]) {
+        ManyInterceptorSpec s;
+        s.pos0_m = get_vec(iv, "pos0_m", s.pos0_m);
+        s.launch_speed_mps = get_or<double>(iv, "launch_speed_mps", s.launch_speed_mps);
+        s.launch_elevation_deg = get_or<double>(iv, "launch_elevation_deg", s.launch_elevation_deg);
+        s.launch_azimuth_deg = get_or<double>(iv, "launch_azimuth_deg", s.launch_azimuth_deg);
+        cfg.interceptors.push_back(s);
+      }
+    }
+    if (mm.contains("threats") && mm["threats"].is_array()) {
+      for (const auto& tv : mm["threats"]) {
+        ManyThreatSpec s;
+        s.pos0_m = get_vec(tv, "pos0_m", s.pos0_m);
+        s.vel0_mps = get_vec(tv, "vel0_mps", s.vel0_mps);
+        s.maneuver = get_or<std::string>(tv, "maneuver", s.maneuver);
+        s.maneuver_g = get_or<double>(tv, "maneuver_g", s.maneuver_g);
+        s.maneuver_freq_hz = get_or<double>(tv, "maneuver_freq_hz", s.maneuver_freq_hz);
+        s.release_time_s = get_or<double>(tv, "release_time_s", s.release_time_s);
+        s.value = get_or<double>(tv, "value", s.value);
+        cfg.threats.push_back(s);
+      }
+    }
+  }
+
   return c;
 }
 
