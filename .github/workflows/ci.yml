@@ -355,3 +355,27 @@ jobs:
         with:
           name: api-docs-html
           path: docs/api/html
+
+  # --- Distributed federation (issue #47). ADDITIVE: builds with the real-UDP DIS transport path
+  # enabled (GNCSIM_INTEROP_UDP) and runs the hermetic distributed test, so the socket-bearing
+  # compile path is covered without ever binding a port in CI. The default native/sanitizer jobs
+  # already run the same test through the GLOB'd CTest with the UDP leg OFF. ---
+  distributed:
+    name: Distributed federation (DIS + UDP build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build with the UDP DIS transport enabled + run the distributed test
+        run: |
+          cmake -S . -B build-interop -DCMAKE_BUILD_TYPE=Release -DGNCSIM_INTEROP_UDP=ON
+          cmake --build build-interop -j"$(nproc)"
+          ctest --test-dir build-interop -R distributed --output-on-failure
+      - name: Record + replay a federated run via the CLI (byte-identical check)
+        run: |
+          ./build-interop/apps/cli/gncsim --config configs/homing_3dof.json \
+            --out /tmp/fed_a --federation-record /tmp/a.gncr
+          ./build-interop/apps/cli/gncsim --config configs/homing_3dof.json \
+            --out /tmp/fed_b --federation-record /tmp/b.gncr
+          cmp /tmp/a.gncr /tmp/b.gncr && echo "federation recordings are byte-identical"

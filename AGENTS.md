@@ -51,6 +51,7 @@ and re-baseline golden runs in the same change.
 | `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `THEORY.md` (the math behind every shipped model + worked CLI/SDK example), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence), `Doxyfile` (C++ API reference — `doxygen docs/Doxyfile`). |
 | `bindings/` | Python SDK (pybind11): `gncsim.run` / `gncsim.monte_carlo` → numpy. `bindings/README.md` is the API reference; built by `scripts/build-python.sh`. |
 | `fmi/` | FMI 2.0 Co-Simulation **FMU export** (issue #44): wraps the pure core as a standards `.fmu` for Simulink/MATLAB-centric masters. Opt-in (`-DGNCSIM_BUILD_FMI=ON`); vendored FMI headers, in-repo master + bit-match test. `docs/FMI.md` is the reference. |
+| `core/{include,src}/gncsim/interop/` | **Opt-in** distributed-simulation federation (issue #47): message bus + DIS (IEEE-1278) PDUs + deterministic record/replay. NOT in the pure hot path (`runSimulation` never touches it); see `docs/DISTRIBUTED.md`. DIS works; HLA/DDS are interface + docs. |
 | `scripts/` | `build-native.sh`, `build-wasm.sh`, `build-python.sh`, `parity-check.mjs`, `determinism-guard.mjs` (fast-tier parity guard, see *Tiered model fidelity*). |
 
 ## Build / test / run — exact commands
