@@ -111,6 +111,34 @@ returns below the WGS-84 ellipsoid (`alt < 0`). Intercept is **not** an early-st
 continuous CPA tracked across the whole flight, `intercept = best_range < kLethalRadius (3 m)`. The
 target is ballistic and not independently terminated.
 
+## Naming conventions — units in variable names (see issue #69)
+
+**Physical-quantity variables MUST carry an explicit SI unit suffix.** Units belong in the name, not
+just a comment, so every use site is unambiguous. Applies to **all new and changed code** (C++, Python,
+TS).
+
+| Quantity | Suffix | Example |
+|---|---|---|
+| length / position | `_m` | `range_m`, `alt_m` |
+| time | `_s` | `t_end_s`, `dt_s` |
+| speed | `_mps` | `launch_speed_mps`, `v_closing_mps` |
+| acceleration | `_mps2` | `accel_cmd_mps2` |
+| mass | `_kg` | `mass_kg` |
+| angle | `_rad` / `_deg` | `elevation_deg`, `aoa_rad` |
+| angular rate | `_radps` | `los_rate_radps`, `body_rate_radps` |
+| force | `_n` | `thrust_n` |
+| frequency | `_hz` | `maneuver_freq_hz` |
+| dimensionless | (none) | `nav_constant`, `mach` |
+
+Use one token per unit (`_radps`, `_mps2`), not `_rad_s`. Dimensionless quantities take no suffix.
+
+**Data-contract keys are special.** Config JSON keys and telemetry channel names in `SimResult.series`
+/ CSV headers are the cross-language schema (see `docs/DATA_CONTRACT.md`). Renaming **those** to add
+units is a **breaking change** — it needs a `schema_version` bump, all four surfaces updated together,
+regenerated samples, and a golden re-baseline. So: apply the convention freely to **internal** variable
+names; touch **contract keys** only via a deliberate, schema-versioned migration. Migration is phased
+under #69 (Phase 1 = this rule; Phase 2 = internal sweep; Phase 3 = optional contract-key rename).
+
 ## Contribution / PR workflow
 
 - **Branch naming:** `feature/<issue#>-<slug>` (e.g. `feature/5-multitracker`). One issue per branch.
