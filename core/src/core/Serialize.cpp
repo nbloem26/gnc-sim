@@ -141,6 +141,9 @@ json metaObject(const SimResult& r) {
   m["intercept"] = r.intercept;
   m["miss_distance"] = r.miss_distance;
   m["intercept_time"] = r.intercept_time;
+  // Interceptor launch / cue time (issue #8). 0 on the default launch-at-t=0 path; > 0 on the cued
+  // launch-on-track path.
+  m["launch_time"] = r.launch_time;
   m["git_sha"] = r.git_sha;
   m["origin"] = {{"lat0_deg", r.origin.lat0_deg},
                  {"lon0_deg", r.origin.lon0_deg},

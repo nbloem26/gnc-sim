@@ -157,6 +157,24 @@ struct DecoysConfig {
   double score_filter_tau = 0.5;    // temporal score integration low-pass time constant [s]
 };
 
+// Interceptor cueing / launch-on-track (issue #8). Opt-in: when disabled (default) nothing changes
+// and the interceptor launches at t=0 exactly as before (byte-identical). When enabled (requires
+// trackers.enabled — the fused multi-sensor track that does the cueing), the engagement runs in two
+// phases within one run: PHASE 1 the interceptor is held stationary at its launch site while the
+// TargetTrackEkf fuses sensor measurements on the incoming threat; once the launch criterion fires
+// the cue/launch time is recorded and the interceptor is LAUNCHED with launch_speed aimed via a
+// constant-velocity lead/intercept solution from the current track estimate (loft_deg added to the
+// elevation). PHASE 2 is normal terminal homing (PN/APN) off the track. The launch criterion is
+// either the fused-track position-covariance trace dropping below cov_trace_threshold, or a hard
+// timeout at max_cue_time, whichever comes first.
+struct CueingConfig {
+  bool enabled = false;
+  std::string launch_criterion = "track_cov";  // "track_cov" | "fixed_delay"
+  double cov_trace_threshold = 1.0e4;          // launch once track position-cov trace < this [m^2]
+  double max_cue_time = 10.0;                  // launch by this time regardless [s]
+  double loft_deg = 0.0;  // elevation bias added to the lead-solution aim [deg]
+};
+
 struct MonteCarloConfig {
   int num_cases = 0;  // 0 => single deterministic run
   double launch_speed_sigma = 0.0;
@@ -184,6 +202,7 @@ struct SimConfig {
   TargetConfig target;
   TrackersConfig trackers;
   DecoysConfig decoys;
+  CueingConfig cueing;
   MonteCarloConfig monte_carlo;
 };
 
