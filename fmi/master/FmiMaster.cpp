@@ -71,6 +71,8 @@ void loggerCb(fmi2ComponentEnvironment, fmi2String instanceName, fmi2Status, fmi
               category != nullptr ? category : "?");
   va_list args;
   va_start(args, message);
+  // va_list is correctly va_start'd above and va_end'd below; the analyzer mis-flags this
+  // textbook varargs forwarding. NOLINTNEXTLINE(clang-analyzer-valist.Uninitialized)
   std::vprintf(message != nullptr ? message : "", args);
   va_end(args);
   std::printf("\n");
