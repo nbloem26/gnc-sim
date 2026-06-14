@@ -17,6 +17,13 @@ option(GNCSIM_BUILD_PYTHON "Build the pybind11 Python bindings (bindings/)" OFF)
 # alongside the CLI so CI can exercise the budget check. Never built under Emscripten.
 option(GNCSIM_BUILD_BENCH "Build the native per-step perf benchmark" ON)
 
+# FMI 2.0 Co-Simulation FMU export (issue #44). Opt-in: when OFF (default) the native build, CTest
+# and every golden run are byte-for-byte unchanged. When ON, builds the co-sim slave shared library
+# (the .so packaged into gncsim.fmu), the modelDescription.xml generator, and the in-repo master +
+# its bit-match CTest case. The vendored FMI 2.0 headers (fmi/include/fmi2/, BSD-2-Clause) mean NO
+# new package dependency. See fmi/ and docs/FMI.md.
+option(GNCSIM_BUILD_FMI "Build the FMI 2.0 Co-Simulation FMU export (fmi/)" OFF)
+
 # --- Test-depth tooling (issue #51), all opt-in so the DEFAULT build/test path is unchanged. ---
 # Comma-separated sanitizer set, e.g. -DGNCSIM_SANITIZE=address,undefined. Empty (default) = off.
 # Applies to every native target (library + CLI + tests) so CTest runs the whole suite instrumented.
@@ -72,6 +79,10 @@ if(NOT EMSCRIPTEN)
   # Python SDK (pybind11) — native-only client of the pure core, off by default (issue #32).
   if(GNCSIM_BUILD_PYTHON)
     add_subdirectory(bindings)
+  endif()
+  # FMI 2.0 Co-Simulation FMU export (issue #44) — wraps the pure core, off by default.
+  if(GNCSIM_BUILD_FMI)
+    add_subdirectory(fmi)
   endif()
 else()
   add_subdirectory(apps/wasm)

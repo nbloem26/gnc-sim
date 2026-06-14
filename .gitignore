@@ -3,6 +3,10 @@
 /build-native/
 /build-wasm/
 /build-python/
+# Any other out-of-source build dir (e.g. build-fmi, build-tidy, build-asan, build-cov...).
+/build-*/
+# Packaged FMI 2.0 Co-Simulation FMU (issue #44) — a build product.
+*.fmu
 *.o
 
 # Generated Doxygen API reference (rebuilt by `doxygen docs/Doxyfile` / the CI docs job)
