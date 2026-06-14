@@ -18,6 +18,7 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
 | Navigation | `nav.filter` | `alpha_beta`, `ekf`, `imm` |
 | Dynamics | `vehicle.model` | `3dof`, `6dof`, `6dof_hifi` |
 | Sensor | `trackers[].type` | `radar`, `ir`, `radar_pheno`, `ir_pheno` |
+| Tracking | `trackers.association.mode` | `none`, `jpda` |
 | Environment | `env.frame` | `flat`, `round` |
 | Threat | `target.maneuver` | `constant`, `weave`, `icbm`, `hgv`, `rv_penaids` |
 
@@ -267,6 +268,53 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   credible core; richer focal-plane/radiometric fidelity is follow-up work.
 - **References.** Hudson, *Infrared System Engineering* (NETD, contrast); Beer-Lambert atmospheric
   transmission; Gandhi & Kassam (CA-CFAR, as above).
+
+---
+
+## Tracking / data association
+
+### `jpda` — Joint Probabilistic Data Association + lifecycle + track-to-track fusion
+
+- **Assumptions.** A multi-object scene — one lethal target, `num_cso` closely-spaced objects
+  (decoys), and Poisson clutter false alarms — observed by the fixed `trackers[].sensors`
+  (issue #38). Selected by `trackers.association.mode == "jpda"`; the default `none` keeps the
+  issue-#5 single-target fusion path byte-identical. Each sensor look yields a SET of detections;
+  the associator must decide which (if any) belongs to the track before updating. The clutter is
+  modelled non-parametrically (spatial density `λ` in measurement space) and the target detection
+  with probability `P_D`. The track is a nearly-constant-velocity `TargetTrackEkf` per sensor; the
+  per-sensor tracks are combined track-to-track.
+- **Governing equations.**
+  - *Validation gate.* A detection `j` is gated if its measurement NIS `dⱼ² = yⱼᵀ S⁻¹ yⱼ ≤ γ`
+    (`gate_chi2`), where `yⱼ = zⱼ − h(x̂)` and `S = H P Hᵀ + R`.
+  - *PDA / JPDA-marginal weights.* `βⱼ ∝ P_D · 𝒩(yⱼ; 0, S)` for each gated detection and
+    `β₀ ∝ (1−P_D)·λ` for the no-detection / all-clutter hypothesis, normalised so
+    `β₀ + Σⱼ βⱼ = 1`. (For a single confirmed track the JPDA marginals reduce to these PDA
+    weights.)
+  - *PDA update.* `x̂⁺ = x̂ + K ȳ` with `ȳ = Σⱼ βⱼ yⱼ`, and the consistency-preserving covariance
+    `P⁺ = P − (1−β₀)KSKᵀ + K(Σⱼ βⱼ yⱼyⱼᵀ − ȳȳᵀ)Kᵀ` (Bar-Shalom; the last "spread of the
+    innovations" term inflates `P` for the association uncertainty).
+  - *Lifecycle.* M-of-N: a track confirms once associated on ≥ `confirm_m` of the last
+    `confirm_n` looks and deletes after `delete_misses` consecutive misses.
+  - *Track-to-track fusion.* Covariance Intersection: `P_f⁻¹ = w P_a⁻¹ + (1−w)P_b⁻¹`,
+    `x_f = P_f(w P_a⁻¹ x_a + (1−w)P_b⁻¹ x_b)`, with `w∈(0,1)` chosen to minimise `tr(P_f)`
+    (golden-section search; ties resolved to `w=0.5`). CI is consistent for any unknown
+    cross-correlation.
+  - *RNG order* (opt-in path only): per sensor, the target `detect()` draws, then one
+    `measure()` per CSO, then a Poisson(`clutter_rate`) clutter count followed by uniform
+    az/el/range offsets per false alarm. Pure project-`Rng` arithmetic + libm, fixed FP order →
+    native/WASM bit-identical.
+- **Validity limits.** Single confirmed track per sensor (the JPDA joint enumeration over
+  multiple competing tracks — and full **MHT** with deferred hypotheses — is a noted follow-up;
+  the lifecycle + PDA marginals are implemented solidly first). The associator is purely
+  **kinematic** (gating on measurement geometry) — it is complementary to, not a replacement for,
+  the feature-based `discrimination` path (issue #6). Clutter is a homogeneous Poisson field about
+  the predicted measurement, not a terrain/range-dependent map. CI is deliberately conservative:
+  it does not beat a single sensor for two *identical* inputs (the price of robustness to unknown
+  correlation); the gain is from **complementary** information.
+- **References.** Bar-Shalom & Fortmann, *Tracking and Data Association* (PDA/JPDA, validation
+  gating, the PDA covariance update); Blackman & Popoli, *Design and Analysis of Modern Tracking
+  Systems* (M-of-N lifecycle, MHT); Julier & Uhlmann, *A Non-divergent Estimation Algorithm in
+  the Presence of Unknown Correlations* (Covariance Intersection).
 
 ---
 

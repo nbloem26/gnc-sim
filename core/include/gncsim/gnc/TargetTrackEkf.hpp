@@ -55,6 +55,13 @@ class TargetTrackEkf {
   // from the first radar measurement if available.
   void bootstrap(const Vector3& pos, const Vector3& vel);
 
+  // Bootstrap with an EXPLICIT initial 1-sigma position/velocity uncertainty (diagonal covariance).
+  // Used by the JPDA data-association path (issue #38): a tight, accuracy-consistent initial gate
+  // is what lets the track reject the surrounding decoys/clutter from the first look instead of
+  // jumping to the cluster centroid (the wide-covariance bootstrap is fine for the single-target
+  // #5 path where there is only one return to gate). pos_sigma_m / vel_sigma_mps in SI.
+  void bootstrap(const Vector3& pos, const Vector3& vel, double pos_sigma_m, double vel_sigma_mps);
+
   // Time update over dt (nearly-constant-velocity). No-op until bootstrapped.
   void predict();
 
@@ -77,6 +84,27 @@ class TargetTrackEkf {
   // state. Exposed for tests; also used internally by update().
   void measurementModel(const TrackSensor& sensor, std::array<double, 4>& h,
                         std::array<double, 24>& H, int& dim) const;
+
+  // --- Data-association support (issue #38). ---------------------------------------------------
+  // Innovation y = z - h(x), its covariance S = H P H^T + R, S^{-1}, and the measurement NIS for a
+  // candidate detection, WITHOUT applying any update. The associator uses this to gate detections
+  // and weight them by their Gaussian likelihood. Returns false (and leaves outputs untouched) if
+  // not initialized, the measurement is too short, or S is singular. `m` is the measurement dim.
+  // `gauss_likelihood` is the unnormalized Gaussian value exp(-NIS/2)/sqrt(det 2*pi*S) (the JPDA
+  // detection-likelihood numerator), filled when requested (pass nullptr to skip).
+  bool innovation(const TrackSensor& sensor, const std::vector<double>& z, std::array<double, 4>& y,
+                  std::array<double, 16>& s_inv, int& m, double& nis,
+                  double* gauss_likelihood) const;
+
+  // Probabilistic Data Association update: combine several VALIDATED (gated) measurements of one
+  // sensor, each carrying an association probability beta_j, plus the no-detection probability
+  // beta0 = 1 - sum(beta_j). Applies the PDA state update x += K * ybar (ybar = sum beta_j y_j) and
+  // the PDA covariance update with the moment "spread of the innovations" term, so the covariance
+  // correctly reflects the association uncertainty. `gated` holds the gated measurement vectors;
+  // `betas` the matching association probabilities (same length). No-op if not initialized / empty.
+  // Returns the combined-innovation NIS (ybar^T S^{-1} ybar), 0 if skipped.
+  double updatePda(const TrackSensor& sensor, const std::vector<std::vector<double>>& gated,
+                   const std::vector<double>& betas, double beta0);
 
  private:
   double dt_;

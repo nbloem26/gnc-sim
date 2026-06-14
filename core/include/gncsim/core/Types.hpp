@@ -98,6 +98,13 @@ struct SimResult {
                                 // (launch-at-t=0) path, > 0 on the cued launch-on-track path
   std::string git_sha;          // filled by entry points if available
 
+  // Multi-target data-association track purity (issue #38): fraction of scored looks on which the
+  // JPDA associator's highest-probability gated detection truly originated from the lethal target
+  // (1.0 = never fooled by a decoy/clutter return). 1.0 on every non-JPDA path (no association to
+  // get wrong). Diagnostic only — NOT serialized into the manifest/CSV, so the data contract and
+  // every existing golden run are unchanged; consumed by the C++ tests and in-process callers.
+  double track_purity = 1.0;
+
   std::vector<Frame> frames;
 };
 
