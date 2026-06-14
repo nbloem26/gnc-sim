@@ -31,7 +31,7 @@ jobs:
         run: pip install clang-format==22.1.5
       - name: Clang-format check
         run: |
-          mapfile -t files < <(find core apps \
+          mapfile -t files < <(find core apps bindings \
             \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/build*/*')
           clang-format --dry-run --Werror "${files[@]}"
 
@@ -78,6 +78,32 @@ jobs:
         run: python sensors/generate_imu_data.py && python sensors/fit_noise_params.py
       - name: Post-processing + validation tests
         run: python -m pytest postproc/tests -q
+
+  python-sdk:
+    name: Python SDK (pybind11) build + import + bit-for-bit test
+    runs-on: ubuntu-latest
+    needs: native
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Install Python deps (pybind11 + numpy + pytest)
+        run: pip install pybind11 numpy pytest
+      # Build the bindings behind the opt-in flag; the compiled _gncsim lands in bindings/gncsim/.
+      - name: Build Python bindings
+        run: ./scripts/build-python.sh
+      - name: Import the module
+        run: |
+          export PYTHONPATH="$PWD/bindings:${PYTHONPATH:-}"
+          python -c "import gncsim; r = gncsim.run({'scenario': 'homing'}); print(sorted(r.keys())); print('series channels:', len(r['series']))"
+      # Reuse the CLI built by the `native` job to assert run(cfg) matches it bit-for-bit.
+      - uses: actions/download-artifact@v5
+        with: { name: gncsim-native, path: build-native/apps/cli }
+      - run: chmod +x build-native/apps/cli/gncsim
+      - name: SDK tests (bit-for-bit vs CLI)
+        run: GNCSIM_CLI="$PWD/build-native/apps/cli/gncsim" python -m pytest bindings/test_sdk.py -q
 
   wasm-web:
     name: WASM build + native↔WASM parity + web build

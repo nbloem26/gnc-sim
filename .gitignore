@@ -2,9 +2,14 @@
 /build/
 /build-native/
 /build-wasm/
+/build-python/
 *.o
 *.a
 *.obj
+# Python SDK (issue #32): the compiled pybind11 extension is a build product (CMake drops it into
+# bindings/gncsim/); only the source + package wrapper are committed.
+bindings/gncsim/*.so
+bindings/gncsim/*.pyd
 
 # Native run outputs (keep the sample)
 /runs/*
