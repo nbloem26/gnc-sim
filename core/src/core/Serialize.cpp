@@ -32,6 +32,7 @@ json seriesObject(const SimResult& r) {
   std::vector<double> nis = col();
   std::vector<double> trk_x = col(), trk_y = col(), trk_z = col();
   std::vector<double> trk_nis = col();
+  std::vector<double> sel_obj = col(), dsc_ok = col(), dsc_margin = col();
   std::vector<double> imu_at_x = col(), imu_am_x = col();
   std::vector<double> imu_gt_x = col(), imu_gm_x = col();
   std::vector<double> sk_t = col(), sk_m = col();
@@ -72,6 +73,9 @@ json seriesObject(const SimResult& r) {
     trk_y.push_back(f.track_pos_est.y);
     trk_z.push_back(f.track_pos_est.z);
     trk_nis.push_back(f.track_nis);
+    sel_obj.push_back(f.selected_obj);
+    dsc_ok.push_back(f.discrim_correct);
+    dsc_margin.push_back(f.discrim_margin);
     imu_at_x.push_back(f.imu_accel_true.x);
     imu_am_x.push_back(f.imu_accel_meas.x);
     imu_gt_x.push_back(f.imu_gyro_true.x);
@@ -115,6 +119,9 @@ json seriesObject(const SimResult& r) {
   s["track_y"] = trk_y;
   s["track_z"] = trk_z;
   s["track_nis"] = trk_nis;
+  s["selected_obj"] = sel_obj;
+  s["discrim_correct"] = dsc_ok;
+  s["discrim_margin"] = dsc_margin;
   s["imu_accel_true_x"] = imu_at_x;
   s["imu_accel_meas_x"] = imu_am_x;
   s["imu_gyro_true_x"] = imu_gt_x;
@@ -164,12 +171,13 @@ std::string toManifestJson(const SimResult& r, const std::string& config_echo) {
 std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
   auto fmt = [](std::ostringstream& os) { os.precision(9); };
 
-  std::ostringstream veh, tgt, gnc, sens, trk;
+  std::ostringstream veh, tgt, gnc, sens, trk, disc;
   fmt(veh);
   fmt(tgt);
   fmt(gnc);
   fmt(sens);
   fmt(trk);
+  fmt(disc);
 
   veh << "t,x,y,z,vx,vy,vz,roll,pitch,yaw,mass,mach,thrust\n";
   tgt << "t,x,y,z,vx,vy,vz\n";
@@ -180,6 +188,10 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
   // Multi-sensor target track (issue #5): fused absolute target-position estimate vs the true
   // target position, plus the last sensor-update NIS. All zero on non-tracker paths.
   trk << "t,track_x,track_y,track_z,tgt_x,tgt_y,tgt_z,track_nis\n";
+  // Seeker target discrimination against decoys (issue #6): the homed-on object index, whether it
+  // was the true target, and the integrated-score margin to the runner-up. All zero/default (object
+  // 0, correct=1, margin=0) on every non-decoy path, so the file is always present but inert.
+  disc << "t,selected_obj,discrim_correct,discrim_margin\n";
 
   for (const auto& f : r.frames) {
     const Vector3 e = f.veh_att.toEuler();
@@ -199,13 +211,12 @@ std::map<std::string, std::string> toCsvFiles(const SimResult& r) {
     trk << f.t << ',' << f.track_pos_est.x << ',' << f.track_pos_est.y << ',' << f.track_pos_est.z
         << ',' << f.tgt_pos.x << ',' << f.tgt_pos.y << ',' << f.tgt_pos.z << ',' << f.track_nis
         << '\n';
+    disc << f.t << ',' << f.selected_obj << ',' << f.discrim_correct << ',' << f.discrim_margin
+         << '\n';
   }
 
-  return {{"vehicle.csv", veh.str()},
-          {"target.csv", tgt.str()},
-          {"gnc.csv", gnc.str()},
-          {"sensors.csv", sens.str()},
-          {"track.csv", trk.str()}};
+  return {{"vehicle.csv", veh.str()},  {"target.csv", tgt.str()}, {"gnc.csv", gnc.str()},
+          {"sensors.csv", sens.str()}, {"track.csv", trk.str()},  {"discrim.csv", disc.str()}};
 }
 
 }  // namespace gncsim

@@ -199,6 +199,23 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     }
   }
 
+  if (j.contains("decoys")) {
+    const auto& d = j["decoys"];
+    c.decoys.enabled = get_or<bool>(d, "enabled", c.decoys.enabled);
+    c.decoys.count = get_or<int>(d, "count", c.decoys.count);
+    c.decoys.separation = get_or<double>(d, "separation", c.decoys.separation);
+    c.decoys.separability = get_or<double>(d, "separability", c.decoys.separability);
+    c.decoys.target_intensity = get_or<double>(d, "target_intensity", c.decoys.target_intensity);
+    c.decoys.target_size = get_or<double>(d, "target_size", c.decoys.target_size);
+    c.decoys.target_decel = get_or<double>(d, "target_decel", c.decoys.target_decel);
+    c.decoys.decoy_intensity = get_or<double>(d, "decoy_intensity", c.decoys.decoy_intensity);
+    c.decoys.decoy_size = get_or<double>(d, "decoy_size", c.decoys.decoy_size);
+    c.decoys.decoy_decel = get_or<double>(d, "decoy_decel", c.decoys.decoy_decel);
+    c.decoys.feature_spread = get_or<double>(d, "feature_spread", c.decoys.feature_spread);
+    c.decoys.measurement_noise = get_or<double>(d, "measurement_noise", c.decoys.measurement_noise);
+    c.decoys.score_filter_tau = get_or<double>(d, "score_filter_tau", c.decoys.score_filter_tau);
+  }
+
   if (j.contains("monte_carlo")) {
     const auto& m = j["monte_carlo"];
     c.monte_carlo.num_cases = get_or<int>(m, "num_cases", c.monte_carlo.num_cases);
