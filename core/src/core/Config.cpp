@@ -257,6 +257,43 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.target.maneuver_freq = get_or<double>(t, "maneuver_freq", c.target.maneuver_freq);
     c.target.maneuver_phase_deg =
         get_or<double>(t, "maneuver_phase_deg", c.target.maneuver_phase_deg);
+
+    // --- Threat suite (issue #42): multi-stage ICBM / HGV / RV+penaids sub-blocks. ---
+    if (t.contains("icbm")) {
+      const auto& ic = t["icbm"];
+      c.target.icbm.payload_mass_kg =
+          get_or<double>(ic, "payload_mass_kg", c.target.icbm.payload_mass_kg);
+      if (ic.contains("stages") && ic["stages"].is_array()) {
+        c.target.icbm.stages.clear();
+        for (const auto& s : ic["stages"]) {
+          IcbmStage stage;
+          stage.thrust_n = get_or<double>(s, "thrust_n", stage.thrust_n);
+          stage.burn_time_s = get_or<double>(s, "burn_time_s", stage.burn_time_s);
+          stage.propellant_mass_kg =
+              get_or<double>(s, "propellant_mass_kg", stage.propellant_mass_kg);
+          stage.dry_mass_kg = get_or<double>(s, "dry_mass_kg", stage.dry_mass_kg);
+          c.target.icbm.stages.push_back(stage);
+        }
+      }
+    }
+    if (t.contains("hgv")) {
+      const auto& h = t["hgv"];
+      c.target.hgv.ld_ratio = get_or<double>(h, "ld_ratio", c.target.hgv.ld_ratio);
+      c.target.hgv.ballistic_coeff =
+          get_or<double>(h, "ballistic_coeff", c.target.hgv.ballistic_coeff);
+      c.target.hgv.rho0_kgpm3 = get_or<double>(h, "rho0_kgpm3", c.target.hgv.rho0_kgpm3);
+      c.target.hgv.scale_height_m =
+          get_or<double>(h, "scale_height_m", c.target.hgv.scale_height_m);
+      c.target.hgv.pull_up_alt_m = get_or<double>(h, "pull_up_alt_m", c.target.hgv.pull_up_alt_m);
+    }
+    if (t.contains("rv")) {
+      const auto& rv = t["rv"];
+      c.target.rv.penaid_count = get_or<int>(rv, "penaid_count", c.target.rv.penaid_count);
+      c.target.rv.deploy_time_s = get_or<double>(rv, "deploy_time_s", c.target.rv.deploy_time_s);
+      c.target.rv.deploy_dv_mps = get_or<double>(rv, "deploy_dv_mps", c.target.rv.deploy_dv_mps);
+      c.target.rv.penaid_decel_mps2 =
+          get_or<double>(rv, "penaid_decel_mps2", c.target.rv.penaid_decel_mps2);
+    }
   }
 
   if (j.contains("trackers")) {

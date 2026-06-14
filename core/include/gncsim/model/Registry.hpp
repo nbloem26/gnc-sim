@@ -49,8 +49,10 @@ class ModelRegistry {
   // env.frame -> IEnvironment (flat-Earth gravity + USSA76 atmosphere). Throws on an unknown frame.
   std::unique_ptr<IEnvironment> makeEnvironment(const EnvConfig& env) const;
 
-  // target.maneuver -> IThreat. Throws on an unknown maneuver.
-  std::unique_ptr<IThreat> makeThreat(const TargetConfig& target) const;
+  // target.maneuver -> IThreat. `g0_mps2` is the surface gravity the gravitating threat-suite
+  // variants (icbm/hgv/rv_penaids) integrate against; it is ignored by constant/weave. Throws on an
+  // unknown maneuver.
+  std::unique_ptr<IThreat> makeThreat(const TargetConfig& target, double g0_mps2 = 9.80665) const;
 };
 
 }  // namespace gncsim

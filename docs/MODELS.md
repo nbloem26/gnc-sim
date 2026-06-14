@@ -19,7 +19,7 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
 | Dynamics | `vehicle.model` | `3dof`, `6dof`, `6dof_hifi` |
 | Sensor | `trackers[].type` | `radar`, `ir` |
 | Environment | `env.frame` | `flat`, `round` |
-| Threat | `target.maneuver` | `constant`, `weave` |
+| Threat | `target.maneuver` | `constant`, `weave`, `icbm`, `hgv`, `rv_penaids` |
 
 > **Adding a model?** You must also add its page here **and** a row to the
 > [V&V matrix](VNV_MATRIX.md) (see `AGENTS.md` → *Adding a model*). The consistency test
@@ -291,5 +291,61 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   sinusoid, horizontal plane only. Degenerates to no maneuver if the target's horizontal speed
   is ~0.
 - **References.** Zarchan ch. 4 (weaving-target case for Augmented PN).
+
+### `icbm` — Multi-stage boosting ICBM
+
+- **Assumptions.** A serial stack of boosting stages (`target.icbm.stages`) plus a payload
+  (`payload_mass_kg`). Each stage thrusts along the velocity vector for its `burn_time_s`, burning
+  `propellant_mass_kg` linearly; at burn-out the spent stage's `dry_mass_kg` is jettisoned (the
+  staging event) and the next stage ignites. After the last stage the threat coasts ballistically.
+  Gravity is constant `g0` (the threat supplies its own gravity; the flat-Earth target propagation
+  does not otherwise gravitate the target).
+- **Governing equations.** During stage *k*'s burn,
+  `a = ĝ·thrust_n_k / m(t)  +  (0,0,−g0)`, where `ĝ = v̂` (velocity direction) and the mass
+  schedule is `m(t) = M0 − Σ(jettisoned dry+propellant) − (propellant burned in the active stage)`,
+  `M0 = payload + Σ_k (dry_mass_kg_k + propellant_mass_kg_k)`. After the final burn-out
+  `a = (0,0,−g0)` (ballistic midcourse).
+- **Validity limits.** A point-mass boost model: thrust along velocity, linear burn, flat-Earth
+  constant gravity, no atmospheric drag on the threat. It reproduces the characteristic lofted
+  ICBM arc (apogee of order 10³ km, downrange of order 10³ km for a near-vertical loft) and the
+  discrete staging mass drops, but it is not a round-Earth great-circle range model.
+- **References.** Boost-phase rocket staging (Tsiolkovsky/serial staging); minimum-energy vs
+  lofted ballistic trajectories (Wertz, *Orbit & Constellation Design*).
+
+### `hgv` — Hypersonic glide vehicle (skip-glide)
+
+- **Assumptions.** A lifting reentry body. Below `pull_up_alt_m` it develops aerodynamic lift
+  perpendicular to its velocity in the vertical plane, magnitude `(L/D)·drag`, directed "up";
+  drag opposes velocity. The atmosphere is a self-contained exponential profile
+  (`ρ = rho0·exp(−h/scale_height_m)`) so the threat does not depend on the interceptor-side aero.
+  Drag deceleration is `q/β = ½ρV²/ballistic_coeff`. Gravity is constant `g0`.
+- **Governing equations.**
+  `a = (0,0,−g0) − v̂·(½ρV²/β) + n̂·(L/D)·(½ρV²/β)`, where `v̂` is the velocity direction,
+  `n̂` the in-plane unit vector perpendicular to `v̂` toward `+z`, `β = ballistic_coeff`, and the
+  lift term is gated off above `pull_up_alt_m`.
+- **Validity limits.** Reproduces the qualitative **skip-glide oscillation** (repeated altitude
+  pull-ups) and the monotone L/D→downrange dependence (higher L/D glides farther). It is a
+  vertical-plane point-mass model: no banking/cross-range, no thermodynamics, an exponential
+  (not USSA76) atmosphere, constant flat-Earth gravity.
+- **References.** Sänger–Bredt skip-glide trajectory; Eggers boost-glide analysis;
+  Allen–Eggers reentry.
+
+### `rv_penaids` — Reentry vehicle + penetration aids
+
+- **Assumptions.** The lethal reentry vehicle (RV) is a heavy ballistic body: `accel` is gravity
+  only. A dispenser releases `penaid_count` lighter penaids/decoys about the RV at `deploy_time_s`
+  with a deterministic radial dispense pattern (`deploy_dv_mps`); penaids carry an extra
+  atmospheric deceleration (`penaid_decel_mps2`) because their lower ballistic coefficient sheds
+  speed faster than the heavy RV. That deceleration difference is the kinematic discrimination cue
+  consumed by the discrimination stack (issue #6).
+- **Governing equations.** RV: `a = (0,0,−g0)`. Penaid *i* (after deploy): velocity offset
+  `Δv_i = (ê₁cos θ_i + ê₂ sin θ_i)·deploy_dv_mps` with `θ_i = 2πi/N` in the plane ⟂ to the RV
+  velocity; propagation `a = (0,0,−g0) − v̂·penaid_decel_mps2`. Scoring: a penaid is correctly
+  classified when its deceleration feature exceeds the RV's (always true for `penaid_decel_mps2 > 0`).
+- **Validity limits.** Deterministic kinematic deployment (no RNG) and a single scalar
+  deceleration feature; the richer noisy multi-feature signature model lives in the `decoys` block
+  (issue #6). The RV itself does not maneuver. Penaids separate from the RV over tens of seconds.
+- **References.** Reentry-vehicle penetration aids / decoy discrimination (ballistic-coefficient
+  separation); see also the `decoys` discrimination model.
 </content>
 </invoke>
