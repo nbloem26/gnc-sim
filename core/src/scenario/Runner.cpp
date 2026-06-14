@@ -126,6 +126,66 @@ Vector3 leadIntercept(const Vector3& launch_pos, double vi, const Vector3& tgt_p
 }
 
 // =============================================================================================
+// Fire-control C2 datalink (cfg.trackers.datalink.enabled — issue #46)
+// =============================================================================================
+//
+// Models the comms link carrying the FUSED track picture from the sensor network → C2 →
+// interceptor. Each step the freshly fused (pos, vel) estimate is OFFERED to the link; what the
+// interceptor's cue/guidance actually receive is:
+//   - DELAYED by `latency_steps` (latency_s rounded to whole dt steps): a FIFO ring of past offers,
+//     so the delivered picture lags the truth by the transport+processing latency.
+//   - DROPPED with probability `dropout_prob` (one seeded-Rng Bernoulli draw per step): on a drop,
+//     the last successfully delivered picture is HELD and ages further until the next message
+//     lands.
+// `age_s` is how stale the delivered picture is (latency + accumulated dropouts), a diagnostic.
+//
+// Opt-in: only constructed/stepped when datalink.enabled (which requires trackers.enabled), so the
+// default RNG draw order and every existing tracker/cueing run stay byte-identical. The single
+// dropout draw per step is the only RNG this adds, and it lives entirely inside the opt-in branch.
+struct Datalink {
+  int latency_steps = 0;
+  double dropout_prob = 0.0;
+  std::vector<std::pair<Vector3, Vector3>> ring;  // FIFO of offered (pos, vel), newest at back
+  std::pair<Vector3, Vector3> last_delivered;     // held picture across a dropped message
+  bool have_delivered = false;
+  double dt_s = 0.0;
+  double age_s = 0.0;  // staleness of the delivered picture [s]
+
+  Datalink(double latency_s, double dropout, double dt) : dropout_prob(dropout), dt_s(dt) {
+    // Round latency to whole steps (floor only on this NEW opt-in path; libm floor is permitted on
+    // new configs per the parity rule). At least 0 steps = no transport delay.
+    latency_steps = (dt > 0.0) ? static_cast<int>(std::floor(latency_s / dt + 0.5)) : 0;
+    if (latency_steps < 0) latency_steps = 0;
+  }
+
+  // Offer the freshly fused estimate; return the delivered (delayed + possibly stale) estimate.
+  // `rng` supplies the per-step dropout Bernoulli draw.
+  std::pair<Vector3, Vector3> step(const Vector3& fused_pos, const Vector3& fused_vel, Rng& rng) {
+    // Push the newest offer; the candidate for delivery is the one latency_steps back.
+    ring.emplace_back(fused_pos, fused_vel);
+    std::pair<Vector3, Vector3> candidate = ring.front();
+    const bool ready = static_cast<int>(ring.size()) > latency_steps;
+    if (ready) {
+      candidate = ring[ring.size() - 1 - static_cast<std::size_t>(latency_steps)];
+      // Trim the ring so it never grows past what the delay needs.
+      while (static_cast<int>(ring.size()) > latency_steps + 1) ring.erase(ring.begin());
+    }
+
+    // Dropout: with prob dropout_prob the message is lost and we hold the last delivered picture.
+    const bool dropped = dropout_prob > 0.0 && rng.uniform(0.0, 1.0) < dropout_prob;
+    if (!dropped && ready) {
+      last_delivered = candidate;
+      have_delivered = true;
+      age_s = latency_steps * dt_s;  // freshly delivered: only the transport latency old
+    } else {
+      // Dropped (or not yet enough history): coast on the held picture, ageing it by one step.
+      age_s += dt_s;
+    }
+    return have_delivered ? last_delivered : candidate;
+  }
+};
+
+// =============================================================================================
 // Decoy / closely-spaced-object scene (cfg.decoys.enabled — issue #6)
 // =============================================================================================
 //
@@ -626,6 +686,14 @@ SimResult runSimulation(const SimConfig& cfg) {
     track_ekf.bootstrap(tgt.pos, tgt.vel);
   }
 
+  // --- Fire-control C2 datalink (issue #46): opt-in latency + dropout on the fused track ---------
+  // When enabled (requires trackers), the fused track is delivered to the cue/guidance through a
+  // delay buffer with stochastic message loss, so the C2 decision and terminal homing run on a
+  // STALE picture. Default disabled -> the fused estimate feeds straight through (byte-identical),
+  // and no dropout RNG is drawn. Constructed unconditionally (cheap); stepped only when enabled.
+  const bool use_datalink = use_trackers && cfg.trackers.datalink.enabled;
+  Datalink datalink(cfg.trackers.datalink.latency_s, cfg.trackers.datalink.dropout_prob, cfg.dt);
+
   // --- Multi-target data association (issue #38): opt-in JPDA mode -------------------------------
   // Selected by trackers.association.mode == "jpda". When ACTIVE, every sensor look yields a SET of
   // detections (true-target return + one per closely-spaced object + Poisson clutter), the Runner
@@ -867,6 +935,18 @@ SimResult runSimulation(const SimConfig& cfg) {
           track_vel_est = jpda_ekf.empty() ? tgt.vel : jpda_ekf[0].vel();
         }
         nav_nis = track_nis;
+      }
+
+      // --- Fire-control C2 datalink (issue #46): deliver the fused picture through
+      // latency+dropout. Replaces track_pos_est/track_vel_est with the DELIVERED (delayed, possibly
+      // stale) estimate so the launch decision below AND terminal guidance both run on the picture
+      // the interceptor actually has. Reported track_pos_est telemetry follows the delivered
+      // picture too. The single dropout RNG draw lives entirely here, only when datalink.enabled.
+      if (use_datalink) {
+        const std::pair<Vector3, Vector3> delivered =
+            datalink.step(track_pos_est, track_vel_est, rng);
+        track_pos_est = delivered.first;
+        track_vel_est = delivered.second;
       }
 
       // --- Launch-on-track (issue #8): fire the launch once the criterion is met ---

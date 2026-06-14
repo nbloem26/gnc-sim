@@ -73,7 +73,8 @@ config is valid. Shape (defaults shown):
                           "rho0_kgpm3": 1.225, "scale_height_m": 7200.0, "pull_up_alt_m": 60000.0 },
                 "rv":   { "penaid_count": 6, "deploy_time_s": 2.0,      // reentry vehicle + penaids
                           "deploy_dv_mps": 8.0, "penaid_decel_mps2": 1.0 } },
-  "trackers": { "enabled": false, "process_psd": 50.0, "sensors": [] },   // multi-sensor fusion
+  "trackers": { "enabled": false, "process_psd": 50.0, "sensors": [],     // multi-sensor fusion
+                "datalink": { "enabled": false, "latency_s": 0.0, "dropout_prob": 0.0 } }, // C2 link
   "decoys":   { "enabled": false, "count": 0, "separation": 50.0, "separability": 1.0,
                 "target_intensity": 1.0, "target_size": 1.0, "target_decel": 1.0,
                 "decoy_intensity": 0.3, "decoy_size": 0.4, "decoy_decel": 3.0,
@@ -148,6 +149,20 @@ channel (below) is zero. Sample configs: `configs/track_radar_only.json`, `track
 `track_fused.json`, and `track_phenomenology.json` (radar_pheno + ir_pheno). Demonstrations:
 `postproc/gncpost/fusion.py` (fusion < radar-only < IR-only) and `postproc/gncpost/phenomenology.py`
 (CA-CFAR ROC + range-Doppler map).
+
+The optional `trackers.datalink` sub-block (default `enabled:false`) is the opt-in **fire-control C2
+datalink** (issue #46): it carries the fused track picture from the sensor network → C2 →
+interceptor through a finite transport+processing `latency_s` [s] (delivered estimate = the fused
+estimate from `round(latency_s/dt)` steps earlier — a delay line) and a per-step Bernoulli
+`dropout_prob` (0..1) that, on a lost message, **holds the last delivered picture** (it ages until
+the next message lands). The **C2 launch decision** (launch-on-track) and **terminal guidance** both
+run on this delivered (delayed/stale) picture, so a staler link aims the interceptor off the threat's
+true position and degrades P(kill); miss/CPA is always scored against truth. **No telemetry columns
+change** (the delivered picture flows through the existing `track_pos_est` channel). The single
+dropout draw lives entirely inside this opt-in branch (which itself requires `trackers.enabled`), so
+with the datalink disabled the default RNG draw order, trajectory, and all four CSVs are
+byte-identical. Sample configs: `configs/bmc2_datalink.json` (latency sweep base) and
+`configs/bmc2_network.json` (latency + dropout on the fused network).
 
 The `decoys` block (default `enabled:false`) is the opt-in **seeker decoy / closely-spaced-object
 discrimination** path (issue #6). When enabled, the Runner places `count` decoys in a Gaussian

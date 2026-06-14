@@ -368,6 +368,15 @@ SimConfig loadConfigFromString(const std::string& json_text) {
       a.init_pos_sigma_m = get_or<double>(as, "init_pos_sigma_m", a.init_pos_sigma_m);
       a.init_vel_sigma_mps = get_or<double>(as, "init_vel_sigma_mps", a.init_vel_sigma_mps);
     }
+
+    // --- Fire-control C2 datalink latency / dropout (issue #46); only consulted when enabled ---
+    if (tr.contains("datalink") && tr["datalink"].is_object()) {
+      const auto& dl = tr["datalink"];
+      auto& d = c.trackers.datalink;
+      d.enabled = get_or<bool>(dl, "enabled", d.enabled);
+      d.latency_s = get_or<double>(dl, "latency_s", d.latency_s);
+      d.dropout_prob = get_or<double>(dl, "dropout_prob", d.dropout_prob);
+    }
   }
 
   if (j.contains("decoys")) {
