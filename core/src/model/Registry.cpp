@@ -49,6 +49,20 @@ class AugmentedProNavGuidance final : public IGuidance {
   GuidanceConfig cfg_;
 };
 
+// Optimal ZEM/ZEV guidance (issue #40). Uses the estimated target acceleration (ZEM feedforward)
+// and the runner-supplied time-to-go (gs.tgo_s); midcourse ZEV term + handover fade live in
+// zemZevCommand.
+class ZemZevGuidance final : public IGuidance {
+ public:
+  explicit ZemZevGuidance(const GuidanceConfig& cfg) : cfg_(cfg) {}
+  Vector3 command(const Engagement& e, const GuidanceState& gs) const override {
+    return zemZevCommand(e, cfg_, gs.a_target_est, gs.tgo_s);
+  }
+
+ private:
+  GuidanceConfig cfg_;
+};
+
 // "none": no guidance command (unguided ballistic). proNavCommand with law=="none" already returns
 // zero, but model it explicitly so the law key is total over the contract's values.
 class NoGuidance final : public IGuidance {
@@ -250,6 +264,7 @@ std::unique_ptr<IGuidance> ModelRegistry::makeGuidance(const std::string& law,
                                                        const GuidanceConfig& cfg) const {
   if (law == "pronav") return std::make_unique<ProNavGuidance>(cfg);
   if (law == "apn") return std::make_unique<AugmentedProNavGuidance>(cfg);
+  if (law == "zemzev") return std::make_unique<ZemZevGuidance>(cfg);
   if (law == "none") return std::make_unique<NoGuidance>();
   throw std::invalid_argument("ModelRegistry: unknown guidance.law '" + law + "'");
 }

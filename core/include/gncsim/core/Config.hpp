@@ -116,12 +116,49 @@ struct PropulsionConfig {
   double stage_mass_drop = 0.0;  // mass dropped at staging [kg]
 };
 
+// Optimal / predictive guidance (guidance.law == "zemzev", issue #40). Opt-in, additive; the
+// existing pronav/apn/none laws are untouched. ZEM/ZEV is the energy-optimal terminal law:
+//   a_cmd = (N_zem / tgo^2) * ZEM  +  (N_zev / tgo) * ZEV
+// where ZEM (zero-effort miss) is the predicted relative MISS at intercept if neither side
+// accelerates further, and ZEV (zero-effort velocity error) is the predicted relative VELOCITY
+// error at intercept versus a desired closing velocity. With N_zem = 3 and the ZEV term off
+// (midcourse only), the law reduces to the classical optimal-PN form (Zarchan ch. 8). The ZEM
+// uses the estimated target acceleration, so it intercepts a constant-accel target with zero
+// steady-state miss (like APN, derived from the optimal-control solution rather than bolted on).
+//
+// Midcourse -> terminal handover: while range > handover_range_m the law runs in MIDCOURSE mode
+// (the ZEV term is active, steering toward a desired intercept geometry); at/within
+// handover_range_m it switches to pure TERMINAL ZEM homing. The switch is continuous: the ZEV
+// weight is faded to zero over a handover_blend_m band ABOVE the switch range, so there is no
+// command discontinuity at the boundary (verified in optimal_guidance_test.cpp).
+struct ZemZevConfig {
+  double n_zem = 3.0;                // ZEM optimal-guidance gain (3 = energy-optimal)
+  double n_zev = 0.0;                // ZEV (velocity-shaping) gain; 0 disables the midcourse term
+  double desired_closing_mps = 0.0;  // desired closing speed for the ZEV term [m/s]; 0 = current
+  double tgo_floor_s = 0.05;      // smallest time-to-go used in the 1/tgo^2 law [s] (avoids blowup)
+  double handover_range_m = 0.0;  // midcourse->terminal switch range [m]; 0 = always terminal
+  double handover_blend_m = 500.0;  // ZEV-fade band above the switch range [m] (continuity)
+};
+
+// Reaction-control / divert actuation (guidance.divert.enabled, issue #40). Exo-atmospheric
+// interceptors steer with discrete reaction-control thrusters (a divert/ACS stage) rather than
+// aero fins. Opt-in: when enabled the realized guidance acceleration is the RCS divert command,
+// hard magnitude-limited to divert_limit_mps2 (the thruster authority). Distinct from the aero
+// max_accel cap, which is the airframe lift limit. Disabled by default -> the legacy aero path is
+// byte-identical.
+struct DivertConfig {
+  bool enabled = false;
+  double divert_limit_mps2 = 100.0;  // RCS divert thruster authority [m/s^2]
+};
+
 struct GuidanceConfig {
-  std::string law = "pronav";   // "pronav" | "apn" | "none"
+  std::string law = "pronav";   // "pronav" | "apn" | "none" | "zemzev"
   double nav_constant = 3.0;    // PN gain N
   double max_accel = 300.0;     // accel command limit [m/s^2]
   double time_constant = 0.0;   // guidance/autopilot lag [s]; 0 = ideal instantaneous
   double apn_filter_tau = 0.1;  // APN target-accel estimator low-pass time constant [s]
+  ZemZevConfig zemzev;          // optimal ZEM/ZEV law parameters (law == "zemzev")
+  DivertConfig divert;          // reaction-control divert actuation (issue #40)
 };
 
 struct ControlConfig {  // 6DOF acceleration autopilot

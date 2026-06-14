@@ -14,7 +14,7 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
 
 | Family | Config key | Shipped values |
 |---|---|---|
-| Guidance | `guidance.law` | `pronav`, `apn`, `none` |
+| Guidance | `guidance.law` | `pronav`, `apn`, `zemzev`, `none` |
 | Navigation | `nav.filter` | `alpha_beta`, `ekf`, `imm` |
 | Dynamics | `vehicle.model` | `3dof`, `6dof`, `6dof_hifi` |
 | Sensor | `trackers[].type` | `radar`, `ir` |
@@ -58,6 +58,46 @@ Models are selected from the config (see [DATA_CONTRACT.md](DATA_CONTRACT.md)):
   with a poor estimate it can be worse than plain PN. Same saturation and closing-geometry
   caveats as `pronav`.
 - **References.** Zarchan, ch. 4 (Augmented PN); the `N/2` augmentation gain.
+
+### `zemzev` — Optimal ZEM/ZEV (predictive) guidance
+
+- **Assumptions.** Point-mass kinematics; the navigator supplies the relative position
+  `r`, relative velocity `v` (target − vehicle), and an estimate of the target acceleration
+  `a_T` (the same runner-level estimator the `apn` law uses). Time-to-go `t_go` is estimated
+  as `range / V_c` (floored at `tgo_floor_s` so the `1/t_go²` term never blows up). The law is
+  the closed-form solution of the linear-quadratic optimal-control intercept problem (minimum
+  control energy to null the predicted miss), not a heuristic.
+- **Governing equation.**
+  `a_cmd = (N_zem / t_go²)·ZEM  +  w(range)·(N_zev / t_go)·ZEV`, magnitude-limited to
+  `max_accel`, where
+  - **ZEM** (zero-effort miss) = predicted relative position at intercept if neither side
+    accelerates further: `ZEM = r + v·t_go + ½·a_T·t_go²`. With `N_zem = 3` this is the
+    energy-optimal terminal law; the `½·a_T·t_go²` term folds in the target's maneuver, so a
+    **constant-acceleration** target is intercepted with zero steady-state miss (the optimal
+    analogue of the `apn` feedforward).
+  - **ZEV** (zero-effort velocity error) = predicted relative velocity at intercept minus a
+    desired closing velocity: `ZEV = (v + a_T·t_go) − v_des`. The `N_zev` term shapes the
+    **midcourse** trajectory toward a desired intercept geometry (e.g. a desired closing
+    speed); set `N_zev = 0` for a pure terminal-homing law.
+  - **Midcourse → terminal handover.** `w(range)` is the handover weight: `1` while
+    `range` is well above `handover_range_m` (midcourse, ZEV active), ramping **linearly to 0**
+    across the `handover_blend_m` band just above the switch range, and `0` at/inside it (pure
+    terminal ZEM). Because `w` is continuous in range, the command has **no discontinuity** at
+    the switch (verified in `optimal_guidance_test::ZemZev.HandoverIsContinuous` /
+    `TerminalPhaseIsPureZem`).
+- **Divert / ACS actuation (`guidance.divert`).** Exo-atmospheric interceptors steer with
+  reaction-control thrusters rather than aero fins. When `guidance.divert.enabled`, the
+  realized guidance acceleration is the RCS divert command, **hard magnitude-limited to
+  `divert_limit_mps2`** (the thruster authority) — distinct from the aero `max_accel` lift cap.
+  Disabled by default; usable with any law but exercised here with `zemzev` for the
+  exo-atmospheric case.
+- **Validity limits.** Optimal under the linearized constant-`a_T`, known-`t_go` assumptions;
+  a poor `t_go` or `a_T` estimate degrades it (the `tgo_floor_s` guard bounds the end-game
+  gain). Like `pronav`/`apn` it commands only while closing (`V_c > 0`) and saturates at
+  `max_accel` (or `divert_limit_mps2` under divert).
+- **References.** Zarchan, *Tactical and Strategic Missile Guidance*, 7th ed., ch. 8
+  (optimal guidance, the ZEM `N=3` form); Ben-Asher & Yaesh, *Advances in Missile Guidance
+  Theory* (ZEM/ZEV and predictive/optimal laws).
 
 ### `none` — Unguided / ballistic
 

@@ -93,6 +93,66 @@ Vector3 augmentedProNavCommand(const Engagement& e, const GuidanceConfig& cfg,
   return limitMagnitude(a_cmd, cfg.max_accel);
 }
 
+// ── Guidance: time-to-go for the predictive laws ────────────────────────────────────────────
+double timeToGo(const Engagement& e, const GuidanceConfig& cfg) {
+  const double floor_s = cfg.zemzev.tgo_floor_s > 0.0 ? cfg.zemzev.tgo_floor_s : 1e-3;
+  // tgo = range / closing speed (positive only while closing). Receding or zero closure -> floor.
+  if (e.v_closing <= 0.0) return floor_s;
+  const double tgo = e.range / e.v_closing;
+  return tgo > floor_s ? tgo : floor_s;
+}
+
+// ── Guidance: optimal ZEM/ZEV (issue #40) ───────────────────────────────────────────────────
+Vector3 zemZevCommand(const Engagement& e, const GuidanceConfig& cfg, const Vector3& a_target_est,
+                      double tgo_s) {
+  // Only the "zemzev" law produces a command, and only while closing (a diverging engagement has
+  // no intercept to optimize toward).
+  if (cfg.law != "zemzev" || e.v_closing <= 0.0) {
+    return Vector3{};
+  }
+  const ZemZevConfig& z = cfg.zemzev;
+  const double tgo = (tgo_s > 0.0) ? tgo_s : timeToGo(e, cfg);
+  const double inv_tgo = 1.0 / tgo;
+
+  // Zero-effort miss: predicted relative position at intercept assuming neither side accelerates
+  // beyond the (estimated) target maneuver. rel_pos/rel_vel are target-relative-to-vehicle, so a
+  // POSITIVE ZEM points from the predicted intercept point back to where the target will be — the
+  // command accelerates the vehicle toward it. The 0.5*a_T*tgo^2 term folds in the target's
+  // maneuver (the optimal analogue of the APN feedforward), so a constant-accel target is hit with
+  // zero steady-state miss.
+  const Vector3 zem = e.rel_pos + e.rel_vel * tgo + a_target_est * (0.5 * tgo * tgo);
+
+  // Terminal ZEM term: a_cmd = N_zem/tgo^2 * ZEM (N_zem = 3 is the energy-optimal gain).
+  Vector3 a_cmd = zem * (z.n_zem * inv_tgo * inv_tgo);
+
+  // Midcourse ZEV (velocity-shaping) term, faded out near the handover range for continuity.
+  if (z.n_zev > 0.0) {
+    // Handover weight: 1 far out (midcourse), ramping linearly to 0 across the blend band just
+    // ABOVE handover_range_m, and 0 at/inside it (pure terminal ZEM). With handover_range_m == 0
+    // the weight is 1 everywhere (ZEV always active) — but the blend still guarantees the command
+    // has no jump because the weight is continuous in range.
+    double weight = 1.0;
+    if (z.handover_range_m > 0.0) {
+      const double blend = z.handover_blend_m > 0.0 ? z.handover_blend_m : 1e-6;
+      weight = (e.range - z.handover_range_m) / blend;
+      weight = std::clamp(weight, 0.0, 1.0);
+    }
+    if (weight > 0.0) {
+      // Desired closing velocity along the LOS (toward the target). 0 -> use the current closing
+      // speed, which makes the ZEV error along-LOS vanish and only shapes the cross-LOS velocity.
+      const double v_des = z.desired_closing_mps > 0.0 ? z.desired_closing_mps : e.v_closing;
+      const Vector3 v_des_vec = e.los_unit * (-v_des);  // rel_vel closing == -v_des along LOS
+      // Predicted relative velocity at intercept (constant target accel) minus the desired.
+      const Vector3 zev = (e.rel_vel + a_target_est * tgo) - v_des_vec;
+      a_cmd += zev * (weight * z.n_zev * inv_tgo);
+    }
+  }
+
+  // Magnitude-limited to the airframe lift cap (the divert/ACS authority limit, when enabled, is
+  // applied separately at the actuation stage in the Runner).
+  return limitMagnitude(a_cmd, cfg.max_accel);
+}
+
 // ── Navigation: alpha-beta tracker ──────────────────────────────────────────────────────────
 void Navigator::update(const Vector3& measured_rel_pos) {
   if (!initialized_) {

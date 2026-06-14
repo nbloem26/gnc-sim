@@ -42,7 +42,15 @@ config is valid. Shape (defaults shown):
                "ixx": -1.0, "iyy": -1.0, "izz": -1.0, "ixy": 0.0, "ixz": 0.0, "iyz": 0.0 },
   "propulsion": { "thrust": 0.0, "burn_time": 0.0, "propellant_mass": 0.0,
                   "boost_ref_area": 0.0, "stage_time": 0.0, "stage_mass_drop": 0.0 },
-  "guidance": { "law": "pronav", "nav_constant": 3.0, "max_accel": 300.0 },
+  "guidance": { "law": "pronav",        // "pronav" | "apn" | "zemzev" | "none"
+                "nav_constant": 3.0, "max_accel": 300.0,
+                "time_constant": 0.0, "apn_filter_tau": 0.1,
+                // --- zemzev (optimal ZEM/ZEV) only (issue #40); ignored by the other laws ---
+                "zemzev": { "n_zem": 3.0, "n_zev": 0.0, "desired_closing_mps": 0.0,
+                            "tgo_floor_s": 0.05, "handover_range_m": 0.0,
+                            "handover_blend_m": 500.0 },
+                // --- reaction-control divert/ACS actuation (issue #40); inert unless enabled ---
+                "divert": { "enabled": false, "divert_limit_mps2": 100.0 } },
   "control":  { "kp": 8.0, "kd": 2.5, "max_fin_deflection": 0.35 },   // 6DOF only
   "actuator": { "tau": 0.02, "rate_limit": 6.0, "deflection_limit": 0.35,
                 "effectiveness": 60.0 },   // 6dof_hifi fin actuators (issue #35)

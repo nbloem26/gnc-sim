@@ -169,6 +169,27 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.guidance.max_accel = get_or<double>(g, "max_accel", c.guidance.max_accel);
     c.guidance.time_constant = get_or<double>(g, "time_constant", c.guidance.time_constant);
     c.guidance.apn_filter_tau = get_or<double>(g, "apn_filter_tau", c.guidance.apn_filter_tau);
+    // Optimal ZEM/ZEV parameters (issue #40); only consulted when law == "zemzev".
+    if (g.contains("zemzev")) {
+      const auto& z = g["zemzev"];
+      c.guidance.zemzev.n_zem = get_or<double>(z, "n_zem", c.guidance.zemzev.n_zem);
+      c.guidance.zemzev.n_zev = get_or<double>(z, "n_zev", c.guidance.zemzev.n_zev);
+      c.guidance.zemzev.desired_closing_mps =
+          get_or<double>(z, "desired_closing_mps", c.guidance.zemzev.desired_closing_mps);
+      c.guidance.zemzev.tgo_floor_s =
+          get_or<double>(z, "tgo_floor_s", c.guidance.zemzev.tgo_floor_s);
+      c.guidance.zemzev.handover_range_m =
+          get_or<double>(z, "handover_range_m", c.guidance.zemzev.handover_range_m);
+      c.guidance.zemzev.handover_blend_m =
+          get_or<double>(z, "handover_blend_m", c.guidance.zemzev.handover_blend_m);
+    }
+    // Reaction-control divert actuation (issue #40); inert unless enabled.
+    if (g.contains("divert")) {
+      const auto& d = g["divert"];
+      c.guidance.divert.enabled = get_or<bool>(d, "enabled", c.guidance.divert.enabled);
+      c.guidance.divert.divert_limit_mps2 =
+          get_or<double>(d, "divert_limit_mps2", c.guidance.divert.divert_limit_mps2);
+    }
   }
 
   if (j.contains("control")) {

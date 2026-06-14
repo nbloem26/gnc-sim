@@ -632,7 +632,11 @@ SimResult runSimulation(const SimConfig& cfg) {
   //   a_target_est = lowpass( (rel_vel_est[k] - rel_vel_est[k-1]) / dt ) + accel_achieved_prev.
   // Works with either nav filter (alpha-beta or EKF) since it consumes the guidance estimate's
   // rel_vel. No new RNG draws — pure deterministic arithmetic, so parity is preserved.
+  // ZEM/ZEV (issue #40) consumes the same estimated-target-acceleration feedforward (folded into
+  // the zero-effort miss), so the estimator below runs for both laws.
+  const bool use_zemzev = (cfg.guidance.law == "zemzev");
   const bool use_apn = (cfg.guidance.law == "apn");
+  const bool estimate_target_accel = use_apn || use_zemzev;
   Vector3 rel_vel_prev;         // est rel_vel from the previous step
   Vector3 a_target_est;         // low-pass-filtered target accel estimate
   bool apn_have_prev = false;   // guard the first step (no derivative yet)
@@ -800,8 +804,9 @@ SimResult runSimulation(const SimConfig& cfg) {
     if (!launched) {
       accel_achieved = Vector3{};
       accel_achieved_prev = Vector3{};
-    } else if (use_apn) {
-      // Estimate the target's acceleration from the navigation relative-velocity derivative.
+    } else if (estimate_target_accel) {
+      // Estimate the target's acceleration from the navigation relative-velocity derivative. Used
+      // by both the APN feedforward and the ZEM/ZEV zero-effort miss (issue #40).
       // accel_achieved here is still the previous step's realized accel (updated below), i.e. the
       // a_vehicle that acted over the interval that produced this step's rel_vel change.
       if (apn_have_prev) {
@@ -825,9 +830,24 @@ SimResult runSimulation(const SimConfig& cfg) {
       apn_have_prev = true;
       GuidanceState gs;
       gs.a_target_est = a_target_est;
+      // ZEM/ZEV needs time-to-go; compute it from the (estimated) engagement geometry. APN ignores
+      // it. Leaving it 0 for APN keeps that path byte-identical.
+      if (use_zemzev) gs.tgo_s = timeToGo(est, cfg.guidance);
       accel_cmd = guidance->command(est, gs);
     } else {
       accel_cmd = guidance->command(est, GuidanceState{});
+    }
+
+    // --- Reaction-control / divert actuation (issue #40) ---
+    // Exo-atmospheric divert/ACS: the commanded acceleration is realized by RCS thrusters with a
+    // finite divert authority, hard-limited to divert_limit_mps2 (distinct from the aero lift cap).
+    // Opt-in: disabled by default, so the legacy aero-steered command is byte-identical.
+    if (cfg.guidance.divert.enabled && launched) {
+      const double divert_mag = accel_cmd.norm();
+      const double divert_limit = cfg.guidance.divert.divert_limit_mps2;
+      if (divert_mag > divert_limit && divert_mag > 0.0) {
+        accel_cmd = accel_cmd * (divert_limit / divert_mag);
+      }
     }
 
     // First-order autopilot lag: the interceptor cannot realize the command instantly. Against a
