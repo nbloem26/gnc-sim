@@ -28,6 +28,21 @@ struct AeroConfig {
   double cd0 = 0.3;                            // fallback drag coeff if table empty
   std::vector<std::array<double, 2>> cd_mach;  // (mach, Cd) breakpoints, ascending mach
   double cn_alpha = 12.0;                      // normal-force coeff slope [1/rad] (6DOF)
+
+  // --- High-fidelity 6DOF aero (model == "6dof_hifi", issue #35). Opt-in: these are consulted
+  // only on the hi-fi path. Tables are interpolated over angle-of-attack [rad] and Mach exactly
+  // like cd_mach. Empty tables fall back to the linear slope/scalar fields below. ---
+  double ref_length = 0.15;  // aerodynamic reference length (diameter) [m]; moment normalization
+
+  // Normal-force coefficient Cn(alpha, mach) and pitch/yaw moment coefficient Cm(alpha, mach).
+  // Each table is a list of (alpha_rad, mach, coeff) rows. When non-empty it supersedes the linear
+  // cn_alpha / cm_alpha slopes. Bilinear-interpolated, clamped at the table edges.
+  std::vector<std::array<double, 3>> cn_table;  // (alpha, mach, Cn)
+  std::vector<std::array<double, 3>> cm_table;  // (alpha, mach, Cm) about the reference (CP-CG)
+
+  double cm_alpha = -8.0;  // static pitch-moment slope [1/rad] (negative => statically stable)
+  double cm_q = -120.0;    // pitch/yaw rate damping coefficient Cmq [1/rad] (negative => damping)
+  double cl_p = -1.0;      // roll rate damping coefficient Clp [1/rad] (negative => damping)
 };
 
 struct VehicleConfig {
@@ -37,6 +52,29 @@ struct VehicleConfig {
   double launch_azimuth_deg = 0.0;     // from East toward North
   double mass0 = 22.0;                 // [kg]
   double inertia = 1.2;                // scalar moment of inertia proxy [kg*m^2] (6DOF)
+
+  // --- Full inertia tensor (model == "6dof_hifi", issue #35). Opt-in: the legacy "6dof" path uses
+  // the scalar `inertia` above unchanged. When any product of inertia is set, or all three
+  // principal moments are given, the hi-fi rotational EOM uses the full 3x3 tensor with the
+  // gyroscopic coupling -omega x (I omega). Defaults below reproduce the scalar proxy: all axes
+  // equal to `inertia`, no products. A value <= 0 for a principal moment means "use `inertia`". ---
+  double ixx = -1.0;  // body-x (roll) moment of inertia [kg*m^2]; <=0 => fall back to `inertia`
+  double iyy = -1.0;  // body-y (pitch) moment of inertia [kg*m^2]
+  double izz = -1.0;  // body-z (yaw) moment of inertia [kg*m^2]
+  double ixy = 0.0;   // products of inertia [kg*m^2]
+  double ixz = 0.0;
+  double iyz = 0.0;
+};
+
+// First-order fin-actuator dynamics + limits (model == "6dof_hifi", issue #35). Opt-in. The
+// autopilot's commanded body moment is allocated to a deflection command; each actuator channel
+// follows it through a first-order lag (time constant `tau`), with the deflection rate and travel
+// hard-limited. The realized deflection generates the control moment fed to the rotational EOM.
+struct ActuatorConfig {
+  double tau = 0.02;               // first-order actuator time constant [s]
+  double rate_limit = 6.0;         // max deflection rate [rad/s]
+  double deflection_limit = 0.35;  // max travel per channel [rad]
+  double effectiveness = 60.0;     // control moment per unit deflection [N*m/rad] (allocation gain)
 };
 
 struct PropulsionConfig {
@@ -189,7 +227,7 @@ struct MonteCarloConfig {
 
 struct SimConfig {
   std::string scenario = "homing";
-  std::string model = "3dof";  // "3dof" | "6dof"
+  std::string model = "3dof";  // "3dof" | "6dof" | "6dof_hifi" (issue #35)
   std::uint64_t seed = 1;
   double dt = 0.005;    // integration step [s]
   double t_end = 60.0;  // max sim time [s]
@@ -202,6 +240,7 @@ struct SimConfig {
   PropulsionConfig propulsion;
   GuidanceConfig guidance;
   ControlConfig control;
+  ActuatorConfig actuator;
   SensorConfig sensors;
   NavConfig nav;
   TargetConfig target;

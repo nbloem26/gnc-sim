@@ -89,6 +89,22 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         }
       }
     }
+    // High-fidelity 6DOF aero (issue #35): reference length, Cn/Cm tables, damping derivatives.
+    c.aero.ref_length = get_or<double>(a, "ref_length", c.aero.ref_length);
+    c.aero.cm_alpha = get_or<double>(a, "cm_alpha", c.aero.cm_alpha);
+    c.aero.cm_q = get_or<double>(a, "cm_q", c.aero.cm_q);
+    c.aero.cl_p = get_or<double>(a, "cl_p", c.aero.cl_p);
+    const auto read_xyz_table = [&](const char* key, std::vector<std::array<double, 3>>& out) {
+      if (a.contains(key) && a[key].is_array()) {
+        for (const auto& row : a[key]) {
+          if (row.is_array() && row.size() == 3) {
+            out.push_back({row[0].get<double>(), row[1].get<double>(), row[2].get<double>()});
+          }
+        }
+      }
+    };
+    read_xyz_table("cn_table", c.aero.cn_table);
+    read_xyz_table("cm_table", c.aero.cm_table);
   }
 
   if (j.contains("vehicle")) {
@@ -101,6 +117,14 @@ SimConfig loadConfigFromString(const std::string& json_text) {
         get_or<double>(v, "launch_azimuth_deg", c.vehicle.launch_azimuth_deg);
     c.vehicle.mass0 = get_or<double>(v, "mass0", c.vehicle.mass0);
     c.vehicle.inertia = get_or<double>(v, "inertia", c.vehicle.inertia);
+    // Full inertia tensor (issue #35); any unset principal moment stays <=0 -> use scalar
+    // `inertia`.
+    c.vehicle.ixx = get_or<double>(v, "ixx", c.vehicle.ixx);
+    c.vehicle.iyy = get_or<double>(v, "iyy", c.vehicle.iyy);
+    c.vehicle.izz = get_or<double>(v, "izz", c.vehicle.izz);
+    c.vehicle.ixy = get_or<double>(v, "ixy", c.vehicle.ixy);
+    c.vehicle.ixz = get_or<double>(v, "ixz", c.vehicle.ixz);
+    c.vehicle.iyz = get_or<double>(v, "iyz", c.vehicle.iyz);
   }
 
   if (j.contains("propulsion")) {
@@ -130,6 +154,15 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.control.kd = get_or<double>(ct, "kd", c.control.kd);
     c.control.max_fin_deflection =
         get_or<double>(ct, "max_fin_deflection", c.control.max_fin_deflection);
+  }
+
+  if (j.contains("actuator")) {
+    const auto& ac = j["actuator"];
+    c.actuator.tau = get_or<double>(ac, "tau", c.actuator.tau);
+    c.actuator.rate_limit = get_or<double>(ac, "rate_limit", c.actuator.rate_limit);
+    c.actuator.deflection_limit =
+        get_or<double>(ac, "deflection_limit", c.actuator.deflection_limit);
+    c.actuator.effectiveness = get_or<double>(ac, "effectiveness", c.actuator.effectiveness);
   }
 
   if (j.contains("sensors")) {

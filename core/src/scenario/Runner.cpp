@@ -18,6 +18,7 @@
 #include "gncsim/aero/Aero.hpp"
 #include "gncsim/core/Rng.hpp"
 #include "gncsim/dynamics/Dynamics.hpp"
+#include "gncsim/dynamics/Dynamics6dofHiFi.hpp"
 #include "gncsim/env/Environment.hpp"
 #include "gncsim/env/Frames.hpp"
 #include "gncsim/gnc/Discriminator.hpp"
@@ -350,7 +351,10 @@ SimResult runSimulation(const SimConfig& cfg) {
   r.t_end = cfg.t_end;
   r.origin = cfg.origin;
 
-  const bool is6dof = (cfg.model == "6dof");
+  // Hi-fi 6DOF (issue #35) is a 6DOF model (attitude/rotational state active) with the full inertia
+  // tensor, table-driven aero moments, and first-order fin-actuator dynamics layered on top.
+  const bool is6dof_hifi = (cfg.model == "6dof_hifi");
+  const bool is6dof = (cfg.model == "6dof") || is6dof_hifi;
   Rng rng(cfg.seed);
 
   // --- Interceptor cueing / launch-on-track (issue #8): opt-in, requires trackers ---
@@ -407,6 +411,9 @@ SimResult runSimulation(const SimConfig& cfg) {
   const bool use_ekf = (cfg.nav.filter == "ekf" || cfg.nav.filter == "imm");
 
   Autopilot autopilot(cfg.control);
+  // Fin-actuator dynamics (issue #35). Constructed unconditionally (cheap); only stepped on the
+  // hi-fi 6DOF path, so the legacy 6DOF/3DOF paths are untouched.
+  FinActuator actuator(cfg.actuator, cfg.dt);
 
   // --- Multi-sensor target track (issue #5): opt-in fusion of fixed ground/space sensors ---
   // When enabled, guidance uses the FUSED absolute target estimate (track_est - vehicle) instead of
@@ -670,7 +677,27 @@ SimResult runSimulation(const SimConfig& cfg) {
     Vector3 moment_body;
     Vector3 fin_deflection;
     Vector3 specific_force;  // non-gravitational accel, for the IMU
-    if (is6dof) {
+    if (is6dof_hifi) {
+      // --- High-fidelity 6DOF (issue #35): table-driven aero force/moment + fin actuators ---
+      // Force: table-driven normal force (Cn(alpha,Mach)) + drag, plus body-nose thrust.
+      force_world = active_aero.force6dofHiFi(veh.vel, veh.att, atm);
+      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag;
+      force_world += thrust_force;
+
+      // Moment: the autopilot commands a body moment; control allocation converts it to a fin
+      // deflection command, the actuators follow it through their first-order lag + rate/travel
+      // limits, and the realized deflection produces the control moment. Aero adds the static
+      // restoring moment (Cm(alpha)) and pitch/yaw/roll rate damping. The realized fin deflection
+      // is the reported fin_deflection telemetry.
+      Vector3 autopilot_fins;  // unused image from the autopilot; actuators own the realized fins
+      const Vector3 moment_cmd = autopilot.moment(veh, accel_achieved, autopilot_fins);
+      const Vector3 defl_cmd = actuator.allocate(moment_cmd);
+      fin_deflection = actuator.step(defl_cmd);
+      const Vector3 control_moment = actuator.controlMoment(fin_deflection);
+      const Vector3 aero_moment = active_aero.momentAero(veh.vel, veh.att, veh.angVel, atm);
+      moment_body = control_moment + aero_moment;
+      specific_force = force_world / veh.mass;
+    } else if (is6dof) {
       force_world = active_aero.force6dof(veh.vel, veh.att, atm);
       // Thrust acts along the body nose (body x-axis rotated into the world frame).
       const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag;
