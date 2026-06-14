@@ -61,6 +61,15 @@ struct Frame {
   Vector3 track_pos_est;   // fused absolute target-position estimate [m]; (0,0,0) when disabled
   double track_nis = 0.0;  // last fused sensor-update NIS; 0 when disabled
 
+  // Seeker target discrimination against decoys (issue #6). Zero/default on every non-decoy path.
+  // When decoys are enabled, the discriminator scores all objects in the seeker FOV each step and
+  // selects the lethal one to home on. selected_obj is the chosen object index (0 = true target by
+  // convention); discrim_correct is 1.0 when the true target was selected, 0.0 otherwise;
+  // discrim_margin is the integrated-score gap to the runner-up (selection confidence).
+  double selected_obj = 0.0;  // index of the homed-on object; 0 on the default single-target path
+  double discrim_correct = 1.0;  // 1 = selected the true target; default path always "correct"
+  double discrim_margin = 0.0;   // best-minus-second integrated score; 0 when no decoys
+
   // Sensors (true vs measured)
   Vector3 imu_accel_true, imu_accel_meas;               // specific force [m/s^2]
   Vector3 imu_gyro_true, imu_gyro_meas;                 // angular rate [rad/s]

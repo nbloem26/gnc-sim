@@ -123,6 +123,40 @@ struct TrackersConfig {
   std::vector<TrackerSensorConfig> sensors;
 };
 
+// Seeker target-discrimination against decoys / closely-spaced objects (issue #6). Opt-in: when
+// disabled (default) nothing changes and the single-true-target homing path is byte-identical. When
+// enabled, the Runner places `count` decoys in a small cluster around the true target, gives every
+// object a feature SIGNATURE (IR intensity, apparent size, ballistic deceleration), the
+// Discriminator scores each object's NOISILY measured features against the expected lethal-target
+// signature each step, integrates the scores over time, and guidance homes on the highest-scoring
+// (selected) object rather than necessarily the true target. The `separability` knob (0..1)
+// controls how distinct the decoy feature distributions are from the true target: 1 = decoys
+// obviously different (easy), 0 = decoys statistically indistinguishable (hard, selection
+// degrades).
+struct DecoysConfig {
+  bool enabled = false;
+  int count = 0;              // number of decoys around the true target
+  double separation = 50.0;   // characteristic cluster spread of decoys about the target [m]
+  double separability = 1.0;  // 0..1; how distinct decoy features are from the true target
+
+  // True (lethal) target's characteristic feature signature, as measured by the seeker.
+  double target_intensity = 1.0;  // IR brightness (dimensionless, relative)
+  double target_size = 1.0;       // apparent size (dimensionless, relative)
+  double target_decel = 1.0;      // ballistic deceleration proxy (heavier target sheds speed less)
+
+  // Decoy feature MEANS at separability = 1 (fully distinct). The actual decoy means are blended
+  // toward the target signature as separability -> 0 (decoys then look like the target).
+  double decoy_intensity = 0.3;  // decoys are dimmer flares / lighter objects
+  double decoy_size = 0.4;       // and smaller
+  double decoy_decel = 3.0;      // and decelerate faster (lighter -> lower ballistic coeff)
+
+  // Per-object feature SPREAD (std dev of the static per-object signature draw) and the seeker's
+  // per-step measurement NOISE std on each feature. Larger -> harder to discriminate.
+  double feature_spread = 0.10;     // static object-to-object signature variation
+  double measurement_noise = 0.08;  // seeker per-step feature measurement noise std
+  double score_filter_tau = 0.5;    // temporal score integration low-pass time constant [s]
+};
+
 struct MonteCarloConfig {
   int num_cases = 0;  // 0 => single deterministic run
   double launch_speed_sigma = 0.0;
@@ -149,6 +183,7 @@ struct SimConfig {
   NavConfig nav;
   TargetConfig target;
   TrackersConfig trackers;
+  DecoysConfig decoys;
   MonteCarloConfig monte_carlo;
 };
 
