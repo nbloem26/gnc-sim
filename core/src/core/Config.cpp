@@ -116,6 +116,7 @@ SimConfig loadConfigFromString(const std::string& json_text) {
     c.guidance.nav_constant = get_or<double>(g, "nav_constant", c.guidance.nav_constant);
     c.guidance.max_accel = get_or<double>(g, "max_accel", c.guidance.max_accel);
     c.guidance.time_constant = get_or<double>(g, "time_constant", c.guidance.time_constant);
+    c.guidance.apn_filter_tau = get_or<double>(g, "apn_filter_tau", c.guidance.apn_filter_tau);
   }
 
   if (j.contains("control")) {

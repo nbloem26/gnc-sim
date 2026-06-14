@@ -28,6 +28,11 @@ namespace {
 
 constexpr double kLethalRadius = 3.0;  // intercept if closest approach is within this [m]
 
+// APN target-acceleration estimator ceiling [m/s^2] ≈ 6 g. A real maneuvering target cannot pull
+// much more than this; the cap rejects the large spurious accelerations that differentiating a
+// noisy navigation velocity produces, so noise spikes can't saturate the feedforward term.
+constexpr double kMaxTargetManeuver = 60.0;
+
 // Smallest rotation taking unit vector `from` onto unit vector `to`.
 Quaternion quatFromTo(const Vector3& from, const Vector3& to) {
   const Vector3 a = from.normalized();
@@ -106,6 +111,17 @@ SimResult runSimulation(const SimConfig& cfg) {
   double best_t = 0.0;
   Vector3
       accel_achieved;  // realized guidance accel, lagged toward the command (finite autopilot τ)
+
+  // --- APN target-acceleration estimator state (only used when guidance.law == "apn") ---
+  // d(rel_vel)/dt = a_target - a_vehicle, and a_vehicle is the known achieved guidance accel, so
+  //   a_target_est = lowpass( (rel_vel_est[k] - rel_vel_est[k-1]) / dt ) + accel_achieved_prev.
+  // Works with either nav filter (alpha-beta or EKF) since it consumes the guidance estimate's
+  // rel_vel. No new RNG draws — pure deterministic arithmetic, so parity is preserved.
+  const bool use_apn = (cfg.guidance.law == "apn");
+  Vector3 rel_vel_prev;         // est rel_vel from the previous step
+  Vector3 a_target_est;         // low-pass-filtered target accel estimate
+  bool apn_have_prev = false;   // guard the first step (no derivative yet)
+  Vector3 accel_achieved_prev;  // a_vehicle from the previous step
 
   // --- Boost phase bookkeeping (default off: thrust==0 => everything below is a no-op) ---
   const auto& prop = cfg.propulsion;
@@ -190,8 +206,35 @@ SimResult runSimulation(const SimConfig& cfg) {
       }
     }
 
-    // --- Guidance: Proportional Navigation ---
-    const Vector3 accel_cmd = proNavCommand(est, cfg.guidance);
+    // --- Guidance: Proportional Navigation (PN) or Augmented PN (APN) ---
+    Vector3 accel_cmd;
+    if (use_apn) {
+      // Estimate the target's acceleration from the navigation relative-velocity derivative.
+      // accel_achieved here is still the previous step's realized accel (updated below), i.e. the
+      // a_vehicle that acted over the interval that produced this step's rel_vel change.
+      if (apn_have_prev) {
+        const Vector3 d_rel_vel = (est.rel_vel - rel_vel_prev) / cfg.dt;
+        Vector3 a_target_raw = d_rel_vel + accel_achieved_prev;
+        // Clamp the raw estimate to a physically plausible target-maneuver ceiling before
+        // filtering. Differentiating a noisy navigation velocity blows up into huge spurious
+        // accelerations; a real maneuvering target cannot pull more than a handful of g, so capping
+        // at ~6 g rejects the differentiated-noise spikes that would otherwise saturate (and wreck)
+        // the feedforward.
+        const double raw_mag = a_target_raw.norm();
+        if (raw_mag > kMaxTargetManeuver && raw_mag > 0.0) {
+          a_target_raw = a_target_raw * (kMaxTargetManeuver / raw_mag);
+        }
+        // First-order low-pass to tame the residual noise in the numerical derivative.
+        const double tau = cfg.guidance.apn_filter_tau;
+        const double blend = tau > 0.0 ? std::min(cfg.dt / tau, 1.0) : 1.0;
+        a_target_est += (a_target_raw - a_target_est) * blend;
+      }
+      rel_vel_prev = est.rel_vel;
+      apn_have_prev = true;
+      accel_cmd = augmentedProNavCommand(est, cfg.guidance, a_target_est);
+    } else {
+      accel_cmd = proNavCommand(est, cfg.guidance);
+    }
 
     // First-order autopilot lag: the interceptor cannot realize the command instantly. Against a
     // maneuvering target this finite time constant is the dominant miss-distance driver.
@@ -201,6 +244,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     } else {
       accel_achieved = accel_cmd;
     }
+    // Remember this step's realized accel for the next step's APN target-accel estimate.
+    accel_achieved_prev = accel_achieved;
 
     // --- Boost: thrust along the velocity/nose, propellant burn (default off when thrust==0) ---
     const bool boosting = prop.thrust > 0.0 && t < prop.burn_time;

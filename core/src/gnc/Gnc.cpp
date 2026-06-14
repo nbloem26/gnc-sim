@@ -18,6 +18,21 @@ Vector3 clampVec(const Vector3& v, double limit) {
           std::clamp(v.z, -limit, limit)};
 }
 
+// Scale a vector down so its magnitude never exceeds limit; direction is preserved at saturation.
+Vector3 limitMagnitude(const Vector3& v, double limit) {
+  const double mag = v.norm();
+  if (mag > limit && mag > 0.0) {
+    return v * (limit / mag);
+  }
+  return v;
+}
+
+// The raw (un-limited) True PN acceleration term: N * Vc * (omega x LOS_unit).
+Vector3 proNavTerm(const Engagement& e, const GuidanceConfig& cfg) {
+  const double N = cfg.nav_constant;
+  return N * e.v_closing * e.los_rate_vec.cross(e.los_unit);
+}
+
 }  // namespace
 
 // ── Guidance: relative engagement geometry ──────────────────────────────────────────────────
@@ -56,15 +71,26 @@ Vector3 proNavCommand(const Engagement& e, const GuidanceConfig& cfg) {
 
   // True PN: a_cmd = N * Vc * (omega x LOS_unit). This is automatically perpendicular to the LOS
   // and drives the LOS rate to zero (the parallel-navigation / constant-bearing intercept).
-  const double N = cfg.nav_constant;
-  Vector3 a_cmd = N * e.v_closing * e.los_rate_vec.cross(e.los_unit);
-
   // Magnitude limit: scale the whole vector down so its direction is preserved at saturation.
-  const double mag = a_cmd.norm();
-  if (mag > cfg.max_accel && mag > 0.0) {
-    a_cmd = a_cmd * (cfg.max_accel / mag);
+  return limitMagnitude(proNavTerm(e, cfg), cfg.max_accel);
+}
+
+// ── Guidance: Augmented Proportional Navigation ─────────────────────────────────────────────
+Vector3 augmentedProNavCommand(const Engagement& e, const GuidanceConfig& cfg,
+                               const Vector3& a_target_est) {
+  // Only the "apn" law produces a command, and only while closing (terminal-homing geometry).
+  if (cfg.law != "apn" || e.v_closing <= 0.0) {
+    return Vector3{};
   }
-  return a_cmd;
+
+  // Target-acceleration feedforward: project the estimated target accel onto the plane ⟂ to the
+  // LOS (the along-LOS component does not change the intercept geometry, so it is removed).
+  const Vector3 a_t_perp = a_target_est - e.los_unit * a_target_est.dot(e.los_unit);
+
+  // APN: PN term + (N/2) * a_T_perp. The feedforward anticipates the target's lateral maneuver,
+  // cancelling the steady-state miss that pure PN leaves against an accelerating target.
+  const Vector3 a_cmd = proNavTerm(e, cfg) + (cfg.nav_constant * 0.5) * a_t_perp;
+  return limitMagnitude(a_cmd, cfg.max_accel);
 }
 
 // ── Navigation: alpha-beta tracker ──────────────────────────────────────────────────────────
