@@ -1,22 +1,21 @@
-name: Self-hosted CI (heavy)
+name: CI (self-hosted)
 
-# Runs on OUR hardware via a self-hosted runner. Opt-in and fork-safe:
-#  - NO `pull_request` trigger, so untrusted fork-PR code never executes on the self-hosted box.
-#  - `workflow_dispatch` (manual) + push to `main` only.
-#  - Job-level guard so repo *forks* that copy this file don't try to use a runner that isn't theirs.
-# The github-hosted ci.yml remains the gate for pull requests.
+# The PR + push gate, running entirely on OUR self-hosted runner — no GitHub-hosted
+# minutes. This is a PRIVATE repo, so the pull_request trigger is safe (only collaborators
+# open PRs). The job guard keeps repo forks from trying to use a runner that isn't theirs.
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [main]
 
 concurrency:
-  group: self-hosted-${{ github.ref }}
+  group: ci-self-hosted-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  heavy:
-    name: Full pipeline + large Monte Carlo
+  ci:
+    name: Full pipeline (self-hosted)
     if: github.repository == 'nbloem26/gnc-sim'
     runs-on: [self-hosted, linux, gnc-sim]
     steps:
@@ -28,7 +27,7 @@ jobs:
           python3 --version
           node --version
 
-      - name: Lint + type-check (C++ / Python / web)
+      - name: Lint + type-check + web build (C++ / Python / web)
         run: |
           python3 -m venv .venv-lint
           . .venv-lint/bin/activate
@@ -36,10 +35,10 @@ jobs:
           ruff check .
           ruff format --check .
           mypy
-          mapfile -t files < <(find core apps \
+          mapfile -t files < <(find core apps bindings \
             \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/build*/*')
           clang-format --dry-run --Werror "${files[@]}"
-          (cd web && npm ci && npm run lint && npx tsc --noEmit)
+          (cd web && npm ci && npm run lint && npx tsc --noEmit && npm run build)
 
       - name: Native build + CTest
         run: |
@@ -49,7 +48,6 @@ jobs:
 
       - name: WASM build (Emscripten)
         run: |
-          # The provisioning script installs emsdk; source it if not already on PATH.
           if ! command -v emcmake >/dev/null 2>&1; then
             for env in "$EMSDK/emsdk_env.sh" "$HOME/emsdk/emsdk_env.sh" "/opt/emsdk/emsdk_env.sh"; do
               [ -f "$env" ] && . "$env" && break
@@ -57,21 +55,26 @@ jobs:
           fi
           ./scripts/build-wasm.sh
 
-      - name: Native ↔ WASM parity
-        run: node scripts/parity-check.mjs configs/homing_3dof.json
+      - name: Native-WASM parity + determinism guard
+        run: |
+          node scripts/parity-check.mjs configs/homing_3dof.json
+          node scripts/determinism-guard.mjs
 
-      - name: Python rigor
+      - name: Python rigor + golden + V&V matrix
         run: |
           python3 -m venv .venv
           . .venv/bin/activate
           pip install -q -r postproc/requirements.txt
           python sensors/generate_imu_data.py && python sensors/fit_noise_params.py
           python -m pytest postproc/tests -q
+          (cd postproc && python -m gncpost.golden && python -m gncpost.vnv)
 
-      - name: Large Monte Carlo campaign
+      - name: Large Monte Carlo campaign (push only)
+        if: github.event_name != 'pull_request'
         run: ./build-native/apps/cli/gncsim --config configs/montecarlo_heavy.json --out runs/mc_heavy
 
       - name: Upload Monte Carlo summary
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v5
         with:
           name: monte-carlo-heavy

@@ -6,13 +6,7 @@ name: Golden runs
 # Separate from ci.yml so the metric-regression gate is independent of build/lint.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-
-# Fork-safe: needs no secrets and runs entirely on the standard github-hosted runner.
-permissions:
-  contents: read
+  workflow_dispatch:   # moved to self-hosted.yml; kept dispatch-only to avoid paid GitHub-hosted minutes
 
 jobs:
   golden:
