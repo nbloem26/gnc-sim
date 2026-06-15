@@ -139,19 +139,19 @@ class TrackSensorModel final : public ISensor {
   std::vector<double> measure(const Vector3& tgt_pos, const Vector3& tgt_vel,
                               Rng& rng) const override {
     const Vector3 rel = tgt_pos - s_.pos;
-    const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
-    const double r = rel.norm();
-    double az = std::atan2(rel.y, rel.x);
-    double el = std::atan2(rel.z, horiz);
-    az += rng.gaussian(0.0, s_.sigma_az);
-    el += rng.gaussian(0.0, s_.sigma_el);
+    const double horiz_m = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+    const double r_m = rel.norm();
+    double az_rad = std::atan2(rel.y, rel.x);
+    double el_rad = std::atan2(rel.z, horiz_m);
+    az_rad += rng.gaussian(0.0, s_.sigma_az);
+    el_rad += rng.gaussian(0.0, s_.sigma_el);
     if (s_.type == TrackSensorType::Ir) {
-      return {az, el};
+      return {az_rad, el_rad};
     }
-    double range = r + rng.gaussian(0.0, s_.sigma_range);
-    double range_rate =
-        (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
-    return {az, el, range, range_rate};
+    double range_m = r_m + rng.gaussian(0.0, s_.sigma_range);
+    double range_rate_mps =
+        (r_m > 1e-9 ? rel.dot(tgt_vel) / r_m : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
+    return {az_rad, el_rad, range_m, range_rate_mps};
   }
 
   const TrackSensor& spec() const override { return s_; }
@@ -181,30 +181,30 @@ class PhenomenologySensorModel final : public ISensor {
   std::vector<double> measure(const Vector3& tgt_pos, const Vector3& tgt_vel,
                               Rng& rng) const override {
     const Vector3 rel = tgt_pos - s_.pos;
-    const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
-    const double r = rel.norm();
-    double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
-    double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, s_.sigma_el);
-    if (!is_radar_) return {az, el};
-    const double range = r + rng.gaussian(0.0, s_.sigma_range);
-    const double range_rate =
-        (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
-    return {az, el, range, range_rate};
+    const double horiz_m = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+    const double r_m = rel.norm();
+    double az_rad = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
+    double el_rad = std::atan2(rel.z, horiz_m) + rng.gaussian(0.0, s_.sigma_el);
+    if (!is_radar_) return {az_rad, el_rad};
+    const double range_m = r_m + rng.gaussian(0.0, s_.sigma_range);
+    const double range_rate_mps =
+        (r_m > 1e-9 ? rel.dot(tgt_vel) / r_m : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
+    return {az_rad, el_rad, range_m, range_rate_mps};
   }
 
   SensorDetection detect(const Vector3& tgt_pos, const Vector3& tgt_vel, Rng& rng) const override {
     const Vector3 rel = tgt_pos - s_.pos;
-    const double r = rel.norm();
+    const double r_m = rel.norm();
 
     // (1) Signal model -> linear SNR. Radar draws the instantaneous Swerling RCS first.
     double snr_linear = 0.0;
-    double ir_sigma_angle = s_.sigma_az;
+    double ir_sigma_angle_rad = s_.sigma_az;
     if (is_radar_) {
       const double rcs_m2 = swerlingRcsSample(swerling_, radar_.rcs_mean_m2, rng);
-      snr_linear = radarSnrLinear(radar_, r, rcs_m2);
+      snr_linear = radarSnrLinear(radar_, r_m, rcs_m2);
     } else {
-      snr_linear = irSnrLinear(ir_, r);
-      ir_sigma_angle = irAngleSigmaRad(ir_, snr_linear);
+      snr_linear = irSnrLinear(ir_, r_m);
+      ir_sigma_angle_rad = irAngleSigmaRad(ir_, snr_linear);
     }
 
     // (2) CA-CFAR detection decision (one Bernoulli uniform).
@@ -212,18 +212,18 @@ class PhenomenologySensorModel final : public ISensor {
     if (!cfar.detected) return SensorDetection{false, {}, cfar.snr_db};
 
     // (3) On a detection, synthesize the measurement. IR centroid noise scales with the SNR.
-    const double horiz = std::sqrt(rel.x * rel.x + rel.y * rel.y);
+    const double horiz_m = std::sqrt(rel.x * rel.x + rel.y * rel.y);
     if (is_radar_) {
-      double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
-      double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, s_.sigma_el);
-      const double range = r + rng.gaussian(0.0, s_.sigma_range);
-      const double range_rate =
-          (r > 1e-9 ? rel.dot(tgt_vel) / r : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
-      return SensorDetection{true, {az, el, range, range_rate}, cfar.snr_db};
+      double az_rad = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, s_.sigma_az);
+      double el_rad = std::atan2(rel.z, horiz_m) + rng.gaussian(0.0, s_.sigma_el);
+      const double range_m = r_m + rng.gaussian(0.0, s_.sigma_range);
+      const double range_rate_mps =
+          (r_m > 1e-9 ? rel.dot(tgt_vel) / r_m : 0.0) + rng.gaussian(0.0, s_.sigma_range_rate);
+      return SensorDetection{true, {az_rad, el_rad, range_m, range_rate_mps}, cfar.snr_db};
     }
-    double az = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, ir_sigma_angle);
-    double el = std::atan2(rel.z, horiz) + rng.gaussian(0.0, ir_sigma_angle);
-    return SensorDetection{true, {az, el}, cfar.snr_db};
+    double az_rad = std::atan2(rel.y, rel.x) + rng.gaussian(0.0, ir_sigma_angle_rad);
+    double el_rad = std::atan2(rel.z, horiz_m) + rng.gaussian(0.0, ir_sigma_angle_rad);
+    return SensorDetection{true, {az_rad, el_rad}, cfar.snr_db};
   }
 
   const TrackSensor& spec() const override { return s_; }
@@ -321,12 +321,12 @@ class WeaveThreat final : public IThreat {
   Vector3 accel(const EntityState& tgt, double t) const override {
     Vector3 vh = tgt.vel;
     vh.z = 0.0;
-    const double s = vh.norm();
-    if (s < 1e-6) return Vector3{};
-    const Vector3 perp{-vh.y / s, vh.x / s, 0.0};
-    const double phase = cfg_.maneuver_phase_deg * M_PI / 180.0;
+    const double s_mps = vh.norm();
+    if (s_mps < 1e-6) return Vector3{};
+    const Vector3 perp{-vh.y / s_mps, vh.x / s_mps, 0.0};
+    const double phase_rad = cfg_.maneuver_phase_deg * M_PI / 180.0;
     return perp *
-           (cfg_.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg_.maneuver_freq * t + phase));
+           (cfg_.maneuver_g * 9.80665 * std::sin(2.0 * M_PI * cfg_.maneuver_freq * t + phase_rad));
   }
 
  private:

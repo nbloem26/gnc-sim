@@ -34,11 +34,12 @@ Integrator parseIntegrator(const std::string& s) {
 }  // namespace
 
 Vector3 launchVelocity(const VehicleConfig& v) {
-  const double el = v.launch_elevation_deg * M_PI / 180.0;
-  const double az = v.launch_azimuth_deg * M_PI / 180.0;
+  const double el_rad = v.launch_elevation_deg * M_PI / 180.0;
+  const double az_rad = v.launch_azimuth_deg * M_PI / 180.0;
   // ENU: x=East, y=North, z=Up. Azimuth measured from East toward North.
-  const double horiz = v.launch_speed * std::cos(el);
-  return {horiz * std::cos(az), horiz * std::sin(az), v.launch_speed * std::sin(el)};
+  const double horiz_mps = v.launch_speed * std::cos(el_rad);
+  return {horiz_mps * std::cos(az_rad), horiz_mps * std::sin(az_rad),
+          v.launch_speed * std::sin(el_rad)};
 }
 
 SimConfig loadConfigFromString(const std::string& json_text) {
