@@ -98,8 +98,8 @@ double timeToGo(const Engagement& e, const GuidanceConfig& cfg) {
   const double floor_s = cfg.zemzev.tgo_floor_s > 0.0 ? cfg.zemzev.tgo_floor_s : 1e-3;
   // tgo = range / closing speed (positive only while closing). Receding or zero closure -> floor.
   if (e.v_closing <= 0.0) return floor_s;
-  const double tgo = e.range / e.v_closing;
-  return tgo > floor_s ? tgo : floor_s;
+  const double tgo_s = e.range / e.v_closing;
+  return tgo_s > floor_s ? tgo_s : floor_s;
 }
 
 // ── Guidance: optimal ZEM/ZEV (issue #40) ───────────────────────────────────────────────────
@@ -120,10 +120,10 @@ Vector3 zemZevCommand(const Engagement& e, const GuidanceConfig& cfg, const Vect
   // command accelerates the vehicle toward it. The 0.5*a_T*tgo^2 term folds in the target's
   // maneuver (the optimal analogue of the APN feedforward), so a constant-accel target is hit with
   // zero steady-state miss.
-  const Vector3 zem = e.rel_pos + e.rel_vel * tgo + a_target_est * (0.5 * tgo * tgo);
+  const Vector3 zem_m = e.rel_pos + e.rel_vel * tgo + a_target_est * (0.5 * tgo * tgo);
 
   // Terminal ZEM term: a_cmd = N_zem/tgo^2 * ZEM (N_zem = 3 is the energy-optimal gain).
-  Vector3 a_cmd = zem * (z.n_zem * inv_tgo * inv_tgo);
+  Vector3 a_cmd = zem_m * (z.n_zem * inv_tgo * inv_tgo);
 
   // Midcourse ZEV (velocity-shaping) term, faded out near the handover range for continuity.
   if (z.n_zev > 0.0) {
@@ -140,8 +140,8 @@ Vector3 zemZevCommand(const Engagement& e, const GuidanceConfig& cfg, const Vect
     if (weight > 0.0) {
       // Desired closing velocity along the LOS (toward the target). 0 -> use the current closing
       // speed, which makes the ZEV error along-LOS vanish and only shapes the cross-LOS velocity.
-      const double v_des = z.desired_closing_mps > 0.0 ? z.desired_closing_mps : e.v_closing;
-      const Vector3 v_des_vec = e.los_unit * (-v_des);  // rel_vel closing == -v_des along LOS
+      const double v_des_mps = z.desired_closing_mps > 0.0 ? z.desired_closing_mps : e.v_closing;
+      const Vector3 v_des_vec = e.los_unit * (-v_des_mps);  // rel_vel closing == -v_des along LOS
       // Predicted relative velocity at intercept (constant target accel) minus the desired.
       const Vector3 zev = (e.rel_vel + a_target_est * tgo) - v_des_vec;
       a_cmd += zev * (weight * z.n_zev * inv_tgo);
@@ -226,11 +226,11 @@ Vector3 FinActuator::step(const Vector3& deflection_cmd) {
   Vector3 target = defl_ + (cmd - defl_) * blend;
 
   // Per-axis change after the lag, then rate-limited to rate_limit*dt and travel-clamped.
-  const double max_step = cfg_.rate_limit * dt_;
+  const double max_step_rad = cfg_.rate_limit * dt_;
   const auto advance = [&](double cur, double tgt) -> double {
     double d = tgt - cur;
-    if (d > max_step) d = max_step;
-    if (d < -max_step) d = -max_step;
+    if (d > max_step_rad) d = max_step_rad;
+    if (d < -max_step_rad) d = -max_step_rad;
     double next = cur + d;
     if (next > cfg_.deflection_limit) next = cfg_.deflection_limit;
     if (next < -cfg_.deflection_limit) next = -cfg_.deflection_limit;
