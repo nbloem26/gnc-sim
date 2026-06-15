@@ -121,12 +121,12 @@ double TargetTrackEkf::covTrace() const {
 void TargetTrackEkf::predict() {
   if (!initialized_) return;
 
-  const double dt = dt_;
+  const double dt_s = dt_;
 
   // x' = F x, F = [[I, dt I],[0, I]]:  pos' = pos + vel*dt ; vel' = vel.
-  x_[0] += x_[3] * dt;
-  x_[1] += x_[4] * dt;
-  x_[2] += x_[5] * dt;
+  x_[0] += x_[3] * dt_s;
+  x_[1] += x_[4] * dt_s;
+  x_[2] += x_[5] * dt_s;
 
   // P' = F P F^T + Q. Same sparse structure exploited as in Ekf.cpp.
   auto P = [&](int row, int col) -> double& { return p_[row * 6 + col]; };
@@ -134,20 +134,20 @@ void TargetTrackEkf::predict() {
   // FP = F * P (row i of F: rows 0..2 = row i + dt*row(i+3); rows 3..5 = identity).
   std::array<double, 36> fp{};
   for (int j = 0; j < 6; ++j) {
-    for (int i = 0; i < 3; ++i) fp[i * 6 + j] = P(i, j) + dt * P(i + 3, j);
+    for (int i = 0; i < 3; ++i) fp[i * 6 + j] = P(i, j) + dt_s * P(i + 3, j);
     for (int i = 3; i < 6; ++i) fp[i * 6 + j] = P(i, j);
   }
   // FP * F^T (col j: cols 0..2 = col j + dt*col(j+3); cols 3..5 unchanged).
   std::array<double, 36> fpft{};
   for (int i = 0; i < 6; ++i) {
-    for (int j = 0; j < 3; ++j) fpft[i * 6 + j] = fp[i * 6 + j] + dt * fp[i * 6 + (j + 3)];
+    for (int j = 0; j < 3; ++j) fpft[i * 6 + j] = fp[i * 6 + j] + dt_s * fp[i * 6 + (j + 3)];
     for (int j = 3; j < 6; ++j) fpft[i * 6 + j] = fp[i * 6 + j];
   }
 
   // Process noise Q (continuous white-noise acceleration), per axis.
-  const double q_pp = q_ * dt * dt * dt / 3.0;
-  const double q_pv = q_ * dt * dt / 2.0;
-  const double q_vv = q_ * dt;
+  const double q_pp = q_ * dt_s * dt_s * dt_s / 3.0;
+  const double q_pv = q_ * dt_s * dt_s / 2.0;
+  const double q_vv = q_ * dt_s;
   for (int k = 0; k < 36; ++k) p_[k] = fpft[k];
   for (int a = 0; a < 3; ++a) {
     P(a, a) += q_pp;
@@ -164,53 +164,53 @@ void TargetTrackEkf::measurementModel(const TrackSensor& sensor, std::array<doub
   for (auto& v : H) v = 0.0;
 
   // Relative geometry from the sensor to the target.
-  const double rx = x_[0] - sensor.pos.x;
-  const double ry = x_[1] - sensor.pos.y;
-  const double rz = x_[2] - sensor.pos.z;
-  const double vx = x_[3], vy = x_[4], vz = x_[5];
+  const double rx_m = x_[0] - sensor.pos.x;
+  const double ry_m = x_[1] - sensor.pos.y;
+  const double rz_m = x_[2] - sensor.pos.z;
+  const double vx_mps = x_[3], vy_mps = x_[4], vz_mps = x_[5];
 
-  const double rho2 = rx * rx + ry * ry;
-  const double rho = std::sqrt(rho2);
-  const double r2 = rho2 + rz * rz;
-  const double r = std::sqrt(r2);
+  const double rho2 = rx_m * rx_m + ry_m * ry_m;
+  const double rho_m = std::sqrt(rho2);
+  const double r2 = rho2 + rz_m * rz_m;
+  const double r_m = std::sqrt(r2);
 
   // az = atan2(ry, rx)
-  h[0] = std::atan2(ry, rx);
+  h[0] = std::atan2(ry_m, rx_m);
   // el = atan2(rz, rho)
-  h[1] = std::atan2(rz, rho);
+  h[1] = std::atan2(rz_m, rho_m);
 
-  if (rho > 1e-9 && r > 1e-9) {
+  if (rho_m > 1e-9 && r_m > 1e-9) {
     // d(az)/d(pos): [-ry/rho2, rx/rho2, 0]
-    H[0 * 6 + 0] = -ry / rho2;
-    H[0 * 6 + 1] = rx / rho2;
+    H[0 * 6 + 0] = -ry_m / rho2;
+    H[0 * 6 + 1] = rx_m / rho2;
     // d(el)/d(pos): [-rx*rz/(r2*rho), -ry*rz/(r2*rho), rho/r2]
-    H[1 * 6 + 0] = -rx * rz / (r2 * rho);
-    H[1 * 6 + 1] = -ry * rz / (r2 * rho);
-    H[1 * 6 + 2] = rho / r2;
+    H[1 * 6 + 0] = -rx_m * rz_m / (r2 * rho_m);
+    H[1 * 6 + 1] = -ry_m * rz_m / (r2 * rho_m);
+    H[1 * 6 + 2] = rho_m / r2;
   }
 
   if (sensor.type == TrackSensorType::Radar) {
     // range = |rel|
-    h[2] = r;
+    h[2] = r_m;
     h[3] = 0.0;
-    if (r > 1e-9) {
-      H[2 * 6 + 0] = rx / r;
-      H[2 * 6 + 1] = ry / r;
-      H[2 * 6 + 2] = rz / r;
+    if (r_m > 1e-9) {
+      H[2 * 6 + 0] = rx_m / r_m;
+      H[2 * 6 + 1] = ry_m / r_m;
+      H[2 * 6 + 2] = rz_m / r_m;
 
       // range_rate = (rel · vel) / |rel|   (sensor static, so rel_vel = target vel)
-      const double rdotv = rx * vx + ry * vy + rz * vz;
-      h[3] = rdotv / r;
+      const double rdotv = rx_m * vx_mps + ry_m * vy_mps + rz_m * vz_mps;
+      h[3] = rdotv / r_m;
       // d(rr)/d(pos_i) = vel_i/r - (rel·vel) * rel_i / r^3
-      const double inv_r = 1.0 / r;
+      const double inv_r = 1.0 / r_m;
       const double inv_r3 = inv_r * inv_r * inv_r;
-      H[3 * 6 + 0] = vx * inv_r - rdotv * rx * inv_r3;
-      H[3 * 6 + 1] = vy * inv_r - rdotv * ry * inv_r3;
-      H[3 * 6 + 2] = vz * inv_r - rdotv * rz * inv_r3;
+      H[3 * 6 + 0] = vx_mps * inv_r - rdotv * rx_m * inv_r3;
+      H[3 * 6 + 1] = vy_mps * inv_r - rdotv * ry_m * inv_r3;
+      H[3 * 6 + 2] = vz_mps * inv_r - rdotv * rz_m * inv_r3;
       // d(rr)/d(vel_i) = rel_i / r
-      H[3 * 6 + 3] = rx * inv_r;
-      H[3 * 6 + 4] = ry * inv_r;
-      H[3 * 6 + 5] = rz * inv_r;
+      H[3 * 6 + 3] = rx_m * inv_r;
+      H[3 * 6 + 4] = ry_m * inv_r;
+      H[3 * 6 + 5] = rz_m * inv_r;
     }
   }
 }
@@ -226,12 +226,12 @@ double TargetTrackEkf::update(const TrackSensor& sensor, const std::vector<doubl
       nis_ = 0.0;
       return 0.0;
     }
-    const double az = z[0], el = z[1], range = z[2];
-    const double cos_el = std::cos(el);
-    bootstrap(
-        Vector3{sensor.pos.x + range * cos_el * std::cos(az),
-                sensor.pos.y + range * cos_el * std::sin(az), sensor.pos.z + range * std::sin(el)},
-        Vector3{});
+    const double az_rad = z[0], el_rad = z[1], range_m = z[2];
+    const double cos_el = std::cos(el_rad);
+    bootstrap(Vector3{sensor.pos.x + range_m * cos_el * std::cos(az_rad),
+                      sensor.pos.y + range_m * cos_el * std::sin(az_rad),
+                      sensor.pos.z + range_m * std::sin(el_rad)},
+              Vector3{});
     return 0.0;
   }
 
