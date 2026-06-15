@@ -3,9 +3,9 @@ import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'GNC Sim — Browser WASM',
+  title: 'GNC Studio — guidance, navigation & control simulator',
   description:
-    'Interactive guidance, navigation & control simulation running in-browser via WebAssembly.',
+    'GNC Studio — an interactive guided-interceptor guidance, navigation & control simulator running entirely in your browser via WebAssembly. Flight dynamics, multi-sensor tracking & fusion, optimal guidance, ballistic & hypersonic threats, and many-on-many engagement campaigns.',
 };
 
 export default function RootLayout({
@@ -18,8 +18,8 @@ export default function RootLayout({
       <body>
         <header className="topbar">
           <div className="brand">
-            <span className="title">GNC&nbsp;SIM</span>
-            <span className="sub">proportional-navigation homing · in-browser WASM</span>
+            <span className="title">GNC&nbsp;Studio</span>
+            <span className="sub">guided-interceptor GNC · dynamics · estimation · fusion · guidance · threats · campaigns · in-browser WASM</span>
           </div>
           <nav className="nav">
             <Link href="/">Simulator</Link>
