@@ -39,10 +39,10 @@ Vector3 GravityModel::acceleration(const Vector3& pos_enu) const {
   }
 
   // Clamp altitude to non-negative; below the reference surface gravity is treated as surface g.
-  const double alt = std::max(0.0, pos_enu.z);
-  const double ratio = kReGravity / (kReGravity + alt);
-  const double g = cfg_.g0 * ratio * ratio;
-  return {0.0, 0.0, -g};
+  const double alt_m = std::max(0.0, pos_enu.z);
+  const double ratio = kReGravity / (kReGravity + alt_m);
+  const double g_mps2 = cfg_.g0 * ratio * ratio;
+  return {0.0, 0.0, -g_mps2};
 }
 
 // =============================================================================================
@@ -88,39 +88,40 @@ AtmSample atmosphereUSSA76(double altitude_m) {
 
   // Precompute base temperature and base pressure at the bottom of each layer by integrating the
   // formulas upward from sea level. Done once on first call (function-local statics).
-  static double base_temp[kNumLayers];
-  static double base_pres[kNumLayers];
+  static double base_temp_k[kNumLayers];
+  static double base_pres_pa[kNumLayers];
   static bool initialized = false;
   if (!initialized) {
-    base_temp[0] = kT0;
-    base_pres[0] = kP0;
+    base_temp_k[0] = kT0;
+    base_pres_pa[0] = kP0;
     for (int i = 1; i < kNumLayers; ++i) {
       const Layer& prev = kLayers[i - 1];
-      const double dh = kLayers[i].base_h - prev.base_h;
-      const double t_top = base_temp[i - 1] + prev.lapse * dh;  // temp at top of previous layer
+      const double dh_m = kLayers[i].base_h - prev.base_h;
+      const double t_top_k = base_temp_k[i - 1] + prev.lapse * dh_m;  // temp at top of prev layer
       if (prev.lapse == 0.0) {
         // Isothermal layer.
-        base_pres[i] = base_pres[i - 1] * std::exp(-kG0 * dh / (kRgas * base_temp[i - 1]));
+        base_pres_pa[i] =
+            base_pres_pa[i - 1] * std::exp(-kG0 * dh_m / (kRgas * base_temp_k[i - 1]));
       } else {
         // Linear-lapse layer.
-        base_pres[i] =
-            base_pres[i - 1] * std::pow(t_top / base_temp[i - 1], -kG0 / (prev.lapse * kRgas));
+        base_pres_pa[i] = base_pres_pa[i - 1] *
+                          std::pow(t_top_k / base_temp_k[i - 1], -kG0 / (prev.lapse * kRgas));
       }
-      base_temp[i] = t_top;
+      base_temp_k[i] = t_top_k;
     }
     initialized = true;
   }
 
   // Clamp geometric altitude to the valid range, then convert to geopotential altitude.
-  const double z = std::clamp(altitude_m, 0.0, 86000.0);
-  double h = kReUssa * z / (kReUssa + z);
+  const double z_m = std::clamp(altitude_m, 0.0, 86000.0);
+  double h_m = kReUssa * z_m / (kReUssa + z_m);
   // Guard against the converted geopotential altitude slightly exceeding the modeled top.
-  h = std::min(h, kTopH);
+  h_m = std::min(h_m, kTopH);
 
-  // Find the layer whose base is at or below h (layers are ascending in altitude).
+  // Find the layer whose base is at or below h_m (layers are ascending in altitude).
   int idx = 0;
   for (int i = 0; i < kNumLayers; ++i) {
-    if (h >= kLayers[i].base_h) {
+    if (h_m >= kLayers[i].base_h) {
       idx = i;
     } else {
       break;
@@ -128,27 +129,27 @@ AtmSample atmosphereUSSA76(double altitude_m) {
   }
 
   const Layer& layer = kLayers[idx];
-  const double Tb = base_temp[idx];
-  const double Pb = base_pres[idx];
-  const double dh = h - layer.base_h;
+  const double Tb_k = base_temp_k[idx];
+  const double Pb_pa = base_pres_pa[idx];
+  const double dh_m = h_m - layer.base_h;
 
-  double temperature;
-  double pressure;
+  double temperature_k;
+  double pressure_pa;
   if (layer.lapse == 0.0) {
     // Isothermal layer.
-    temperature = Tb;
-    pressure = Pb * std::exp(-kG0 * dh / (kRgas * Tb));
+    temperature_k = Tb_k;
+    pressure_pa = Pb_pa * std::exp(-kG0 * dh_m / (kRgas * Tb_k));
   } else {
     // Linear-lapse layer.
-    temperature = Tb + layer.lapse * dh;
-    pressure = Pb * std::pow(temperature / Tb, -kG0 / (layer.lapse * kRgas));
+    temperature_k = Tb_k + layer.lapse * dh_m;
+    pressure_pa = Pb_pa * std::pow(temperature_k / Tb_k, -kG0 / (layer.lapse * kRgas));
   }
 
   AtmSample s;
-  s.temperature = temperature;
-  s.pressure = pressure;
-  s.density = pressure / (kRgas * temperature);
-  s.speed_of_sound = std::sqrt(kGamma * kRgas * temperature);
+  s.temperature = temperature_k;
+  s.pressure = pressure_pa;
+  s.density = pressure_pa / (kRgas * temperature_k);
+  s.speed_of_sound = std::sqrt(kGamma * kRgas * temperature_k);
   return s;
 }
 

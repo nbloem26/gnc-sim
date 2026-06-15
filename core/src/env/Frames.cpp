@@ -26,35 +26,35 @@ Vector3 geodeticToEcef(double lat_rad, double lon_rad, double alt_m) {
   const double cos_lat = std::cos(lat_rad);
   const double sin_lon = std::sin(lon_rad);
   const double cos_lon = std::cos(lon_rad);
-  const double N = primeVerticalRadius(sin_lat);
-  const double x = (N + alt_m) * cos_lat * cos_lon;
-  const double y = (N + alt_m) * cos_lat * sin_lon;
-  const double z = (N * (1.0 - wgs84::kE2) + alt_m) * sin_lat;
-  return {x, y, z};
+  const double N_m = primeVerticalRadius(sin_lat);
+  const double x_m = (N_m + alt_m) * cos_lat * cos_lon;
+  const double y_m = (N_m + alt_m) * cos_lat * sin_lon;
+  const double z_m = (N_m * (1.0 - wgs84::kE2) + alt_m) * sin_lat;
+  return {x_m, y_m, z_m};
 }
 
 // Bowring's iterative method: converges to well below mm in a few iterations everywhere.
 void ecefToGeodetic(const Vector3& ecef, double& lat_rad, double& lon_rad, double& alt_m) {
-  const double x = ecef.x;
-  const double y = ecef.y;
-  const double z = ecef.z;
-  lon_rad = std::atan2(y, x);
+  const double x_m = ecef.x;
+  const double y_m = ecef.y;
+  const double z_m = ecef.z;
+  lon_rad = std::atan2(y_m, x_m);
 
-  const double p = std::sqrt(x * x + y * y);
-  // Handle the polar singularity (p == 0) explicitly.
-  if (p < 1e-9) {
-    lat_rad = (z >= 0.0) ? (M_PI / 2.0) : (-M_PI / 2.0);
-    alt_m = std::fabs(z) - wgs84::kB;
+  const double p_m = std::sqrt(x_m * x_m + y_m * y_m);
+  // Handle the polar singularity (p_m == 0) explicitly.
+  if (p_m < 1e-9) {
+    lat_rad = (z_m >= 0.0) ? (M_PI / 2.0) : (-M_PI / 2.0);
+    alt_m = std::fabs(z_m) - wgs84::kB;
     return;
   }
 
   // Initial latitude guess (spherical), then iterate.
-  double lat = std::atan2(z, p * (1.0 - wgs84::kE2));
+  double lat = std::atan2(z_m, p_m * (1.0 - wgs84::kE2));
   for (int i = 0; i < 8; ++i) {
     const double sin_lat = std::sin(lat);
-    const double N = primeVerticalRadius(sin_lat);
-    const double alt = p / std::cos(lat) - N;
-    const double next = std::atan2(z, p * (1.0 - wgs84::kE2 * N / (N + alt)));
+    const double N_m = primeVerticalRadius(sin_lat);
+    const double alt_iter_m = p_m / std::cos(lat) - N_m;
+    const double next = std::atan2(z_m, p_m * (1.0 - wgs84::kE2 * N_m / (N_m + alt_iter_m)));
     if (std::fabs(next - lat) < 1e-14) {
       lat = next;
       break;
@@ -63,8 +63,8 @@ void ecefToGeodetic(const Vector3& ecef, double& lat_rad, double& lon_rad, doubl
   }
   lat_rad = lat;
   const double sin_lat = std::sin(lat);
-  const double N = primeVerticalRadius(sin_lat);
-  alt_m = p / std::cos(lat) - N;
+  const double N_m = primeVerticalRadius(sin_lat);
+  alt_m = p_m / std::cos(lat) - N_m;
 }
 
 // =============================================================================================
@@ -84,9 +84,9 @@ struct EnuBasis {
 };
 
 EnuBasis originBasis(const GeodeticOrigin& o) {
-  const double lat = o.lat0_deg * kDeg2Rad;
-  const double lon = o.lon0_deg * kDeg2Rad;
-  return {std::sin(lat), std::cos(lat), std::sin(lon), std::cos(lon)};
+  const double lat_rad = o.lat0_deg * kDeg2Rad;
+  const double lon_rad = o.lon0_deg * kDeg2Rad;
+  return {std::sin(lat_rad), std::cos(lat_rad), std::sin(lon_rad), std::cos(lon_rad)};
 }
 
 Vector3 enuVecToEcefImpl(const Vector3& e, const EnuBasis& b) {
@@ -131,9 +131,9 @@ Vector3 ecefToEnu(const Vector3& ecef, const GeodeticOrigin& origin) {
 // ECI <-> ECEF  (rotation about +Z by the Earth angle theta = omega * t)
 // =============================================================================================
 namespace {
-Vector3 rotateZ(const Vector3& v, double theta) {
-  const double c = std::cos(theta);
-  const double s = std::sin(theta);
+Vector3 rotateZ(const Vector3& v, double theta_rad) {
+  const double c = std::cos(theta_rad);
+  const double s = std::sin(theta_rad);
   return {c * v.x - s * v.y, s * v.x + c * v.y, v.z};
 }
 }  // namespace
@@ -163,10 +163,10 @@ Vector3 ecefVelToEci(const Vector3& r_ecef, const Vector3& v_ecef, double t) {
 // Gravity (central point-mass + optional J2)
 // =============================================================================================
 Vector3 centralGravity(const Vector3& r, bool with_j2) {
-  const double rmag = r.norm();
-  if (rmag < 1.0) return Vector3{};  // guard the singularity at the centre
-  const double inv_r2 = 1.0 / (rmag * rmag);
-  const double inv_r = 1.0 / rmag;
+  const double rmag_m = r.norm();
+  if (rmag_m < 1.0) return Vector3{};  // guard the singularity at the centre
+  const double inv_r2 = 1.0 / (rmag_m * rmag_m);
+  const double inv_r = 1.0 / rmag_m;
   // Point-mass term.
   Vector3 g = r * (-wgs84::kGM * inv_r2 * inv_r);  // -GM/r^3 * r
 

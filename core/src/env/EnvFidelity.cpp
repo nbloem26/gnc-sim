@@ -71,31 +71,31 @@ constexpr double kDeg2Rad = M_PI / 180.0;
 // the ratio re/r and the latitude term phi = z/r. We accumulate the central term plus each selected
 // zonal. The J2 block is algebraically identical to centralGravity()'s J2 term.
 Vector3 egmGravity(const Vector3& r, const GravityFidelityConfig& cfg) {
-  const double rmag = r.norm();
-  if (rmag < 1.0) return Vector3{};  // guard the singularity at the centre
+  const double rmag_m = r.norm();
+  if (rmag_m < 1.0) return Vector3{};  // guard the singularity at the centre
 
   const double mu = wgs84::kGM;
-  const double re = wgs84::kA;
-  const double inv_r = 1.0 / rmag;
+  const double re_m = wgs84::kA;
+  const double inv_r = 1.0 / rmag_m;
   const double inv_r2 = inv_r * inv_r;
 
   // Central point-mass term: -mu/r^3 * r.
   Vector3 g = r * (-mu * inv_r2 * inv_r);
 
-  const double x = r.x, y = r.y, z = r.z;
-  const double zr = z * inv_r;  // sin(geocentric latitude)
+  const double x_m = r.x, y_m = r.y, z_m = r.z;
+  const double zr = z_m * inv_r;  // sin(geocentric latitude)
   const double zr2 = zr * zr;
-  const double re_r = re * inv_r;  // (Re/r)
+  const double re_r = re_m * inv_r;  // (Re/r)
   const double re_r2 = re_r * re_r;
   const double mu_r2 = mu * inv_r2;  // mu/r^2
 
   // --- J2 ---  (matches centralGravity's expansion exactly)
   if (cfg.include_j2) {
-    const double factor = 1.5 * kJ2 * mu * re * re * inv_r2 * inv_r2;  // 1.5 J2 mu Re^2 / r^4
+    const double factor = 1.5 * kJ2 * mu * re_m * re_m * inv_r2 * inv_r2;  // 1.5 J2 mu Re^2 / r^4
     const double zterm = 5.0 * zr2;
-    g.x += factor * (zterm - 1.0) * x * inv_r;
-    g.y += factor * (zterm - 1.0) * y * inv_r;
-    g.z += factor * (zterm - 3.0) * z * inv_r;
+    g.x += factor * (zterm - 1.0) * x_m * inv_r;
+    g.y += factor * (zterm - 1.0) * y_m * inv_r;
+    g.z += factor * (zterm - 3.0) * z_m * inv_r;
   }
 
   // --- J3 ---  (odd zonal; "pear-shape"). Vallado form:
@@ -105,8 +105,8 @@ Vector3 egmGravity(const Vector3& r, const GravityFidelityConfig& cfg) {
     const double re_r3 = re_r2 * re_r;
     const double common = mu_r2 * re_r3;
     const double horiz = -2.5 * kJ3 * common * (7.0 * zr2 * zr - 3.0 * zr) * inv_r;
-    g.x += horiz * x;
-    g.y += horiz * y;
+    g.x += horiz * x_m;
+    g.y += horiz * y_m;
     g.z += -0.5 * kJ3 * common * (35.0 * zr2 * zr2 - 30.0 * zr2 + 3.0);
   }
 
@@ -117,8 +117,8 @@ Vector3 egmGravity(const Vector3& r, const GravityFidelityConfig& cfg) {
     const double re_r4 = re_r2 * re_r2;
     const double common = mu_r2 * re_r4;
     const double horiz = 0.625 * kJ4 * common * (63.0 * zr2 * zr2 - 42.0 * zr2 + 3.0) * inv_r;
-    g.x += horiz * x;
-    g.y += horiz * y;
+    g.x += horiz * x_m;
+    g.y += horiz * y_m;
     g.z += 0.625 * kJ4 * common * (33.0 * zr2 * zr2 - 30.0 * zr2 + 5.0) * zr;
   }
 
@@ -136,7 +136,7 @@ AtmSample atmosphereExtended(double altitude_m) {
 
   // Pin the bottom node's density to the live USSA76 value at exactly 86 km so the handover is
   // continuous to machine precision regardless of the tabulated node constant.
-  const double rho0 = atmosphereUSSA76(kHandoverAltM).density;
+  const double rho0_kgpm3 = atmosphereUSSA76(kHandoverAltM).density;
 
   // Above the top anchor, hold the top node (finite, tiny, no NaN).
   if (altitude_m >= kExtNodes[kNumExtNodes - 1].alt_m) {
@@ -156,22 +156,22 @@ AtmSample atmosphereExtended(double altitude_m) {
   }
   const ExtNode& a = kExtNodes[lo];
   const ExtNode& b = kExtNodes[lo + 1];
-  const double rho_a = (lo == 0) ? rho0 : a.rho;
-  const double rho_b = b.rho;
+  const double rho_a_kgpm3 = (lo == 0) ? rho0_kgpm3 : a.rho;
+  const double rho_b_kgpm3 = b.rho;
 
   // Log-linear (constant effective scale height) density interpolation within the interval, so the
   // curve is continuous and strictly monotone between nodes.
   const double frac = (altitude_m - a.alt_m) / (b.alt_m - a.alt_m);
-  const double density = rho_a * std::pow(rho_b / rho_a, frac);
+  const double density_kgpm3 = rho_a_kgpm3 * std::pow(rho_b_kgpm3 / rho_a_kgpm3, frac);
 
   // Linear temperature interpolation within the interval.
-  const double temperature = a.temp_k + frac * (b.temp_k - a.temp_k);
+  const double temperature_k = a.temp_k + frac * (b.temp_k - a.temp_k);
 
   AtmSample s;
-  s.temperature = temperature;
-  s.density = density;
-  s.pressure = density * kRgas * temperature;  // ideal-gas closure (continuum proxy)
-  s.speed_of_sound = std::sqrt(kGamma * kRgas * temperature);
+  s.temperature = temperature_k;
+  s.density = density_kgpm3;
+  s.pressure = density_kgpm3 * kRgas * temperature_k;  // ideal-gas closure (continuum proxy)
+  s.speed_of_sound = std::sqrt(kGamma * kRgas * temperature_k);
   return s;
 }
 
@@ -181,21 +181,21 @@ AtmSample atmosphereExtended(double altitude_m) {
 Vector3 windEnu(double altitude_m, const WindConfig& cfg) {
   if (!cfg.enabled) return Vector3{};
 
-  const double z = std::max(0.0, altitude_m);
-  double speed;
-  if (z <= cfg.jet_alt_m) {
+  const double z_m = std::max(0.0, altitude_m);
+  double speed_mps;
+  if (z_m <= cfg.jet_alt_m) {
     // Linear shear from the surface value up to the jet maximum.
-    const double frac = (cfg.jet_alt_m > 0.0) ? (z / cfg.jet_alt_m) : 1.0;
-    speed = cfg.surface_mps + frac * (cfg.jet_mps - cfg.surface_mps);
+    const double frac = (cfg.jet_alt_m > 0.0) ? (z_m / cfg.jet_alt_m) : 1.0;
+    speed_mps = cfg.surface_mps + frac * (cfg.jet_mps - cfg.surface_mps);
   } else {
     // Exponential decay above the jet back toward (and below) the surface value.
-    const double decay = std::exp(-(z - cfg.jet_alt_m) / std::max(1.0, cfg.decay_scale_m));
-    speed = cfg.jet_mps * decay;
+    const double decay = std::exp(-(z_m - cfg.jet_alt_m) / std::max(1.0, cfg.decay_scale_m));
+    speed_mps = cfg.jet_mps * decay;
   }
 
   // Heading measured from East toward North (matches launch_azimuth convention). Horizontal only.
-  const double dir = cfg.dir_deg * kDeg2Rad;
-  return {speed * std::cos(dir), speed * std::sin(dir), 0.0};
+  const double dir_rad = cfg.dir_deg * kDeg2Rad;
+  return {speed_mps * std::cos(dir_rad), speed_mps * std::sin(dir_rad), 0.0};
 }
 
 }  // namespace gncsim
