@@ -23,7 +23,16 @@ log "Installing build toolchain (sudo apt)"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   build-essential cmake ninja-build git curl ca-certificates jq \
-  python3 python3-pip python3-venv nodejs npm
+  python3 python3-pip python3-venv
+
+# --- Node.js (Ubuntu's nodejs+npm apt packages conflict; use NodeSource which bundles npm) ---
+if ! command -v node >/dev/null 2>&1; then
+  log "Installing Node.js 20 via NodeSource"
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+else
+  log "Node.js already present ($(node -v)) - skipping"
+fi
 
 # --- 2. Emscripten SDK ------------------------------------------------------------
 if [ ! -d "$HOME/emsdk" ]; then
