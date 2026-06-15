@@ -307,7 +307,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
   // Velocity: ENU launch vel -> ECEF (rotation) -> ECI inertial (add Earth rotation omega x r).
   const Vector3 veh_vel_ecef = enuVecToEcef(launchVelocity(cfg.vehicle), origin);
   Vector3 veh_v = ecefVelToEci(veh_ecef0, veh_vel_ecef, 0.0);
-  double veh_mass = cfg.vehicle.mass0;
+  double veh_mass_kg = cfg.vehicle.mass0;
 
   const Vector3 tgt_ecef0 = enuToEcef(cfg.target.pos0, origin);
   Vector3 tgt_r = ecefToEci(tgt_ecef0, 0.0);
@@ -330,8 +330,8 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     vel_enu = ecefVecToEnu(v_ecef, origin);
   };
 
-  double best_range = (tgt_r - veh_r).norm();
-  double best_t = 0.0;
+  double best_range_m = (tgt_r - veh_r).norm();
+  double best_t_s = 0.0;
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
   // Reserve the telemetry buffer up front: the loop emits exactly one frame per step (plus the
@@ -346,19 +346,19 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     // --- ECEF / geodetic state for atmosphere + termination. ---
     const Vector3 veh_ecef = eciToEcef(veh_r, t);
     const Vector3 veh_vel_ecef_now = eciVelToEcef(veh_r, veh_v, t);
-    double lat, lon, alt;
-    ecefToGeodetic(veh_ecef, lat, lon, alt);
+    double lat_rad, lon_rad, alt_m;
+    ecefToGeodetic(veh_ecef, lat_rad, lon_rad, alt_m);
 
-    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt_m) : AtmSample{0.0, 0.0, 288.15, 340.29};
     // Air-relative velocity in ECEF: the atmosphere co-rotates with Earth (= ECEF velocity), with
     // an optional parameterized wind in local ENU rotated into ECEF and subtracted off.
     Vector3 air_vel_ecef = veh_vel_ecef_now;
     if (wind.enabled) {
-      const Vector3 wind_ecef = enuVecToEcef(windEnu(alt, wind), origin);
+      const Vector3 wind_ecef = enuVecToEcef(windEnu(alt_m, wind), origin);
       air_vel_ecef = veh_vel_ecef_now - wind_ecef;
     }
-    const double airspeed = air_vel_ecef.norm();
-    const double mach = atm.speed_of_sound > 0.0 ? airspeed / atm.speed_of_sound : 0.0;
+    const double airspeed_mps = air_vel_ecef.norm();
+    const double mach = atm.speed_of_sound > 0.0 ? airspeed_mps / atm.speed_of_sound : 0.0;
 
     // --- ENU telemetry + engagement geometry (frame-agnostic relative state). ---
     Vector3 veh_pos_enu, veh_vel_enu, tgt_pos_enu, tgt_vel_enu;
@@ -377,7 +377,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     f.t = t;
     f.veh_pos = veh_pos_enu;
     f.veh_vel = veh_vel_enu;
-    f.mass = veh_mass;
+    f.mass = veh_mass_kg;
     f.mach = mach;
     f.tgt_pos = tgt_pos_enu;
     f.tgt_vel = tgt_vel_enu;
@@ -395,17 +395,17 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     const Vector3 rel_pos = tgt_r - veh_r;
     const Vector3 rel_vel = tgt_v - veh_v;
     const double denom = rel_vel.normSq();
-    double s_star = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
-    if (s_star < 0.0) s_star = 0.0;
-    if (s_star > cfg.dt) s_star = cfg.dt;
-    const double cpa = (rel_pos + rel_vel * s_star).norm();
-    if (cpa < best_range) {
-      best_range = cpa;
-      best_t = t + s_star;
+    double s_star_s = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
+    if (s_star_s < 0.0) s_star_s = 0.0;
+    if (s_star_s > cfg.dt) s_star_s = cfg.dt;
+    const double cpa_m = (rel_pos + rel_vel * s_star_s).norm();
+    if (cpa_m < best_range_m) {
+      best_range_m = cpa_m;
+      best_t_s = t + s_star_s;
     }
 
     // --- Termination: vehicle returns to (below) the ellipsoid surface. ---
-    if (alt < 0.0 && t > 0.0) break;
+    if (alt_m < 0.0 && t > 0.0) break;
 
     // --- Forces in ECI: central gravity + drag (drag built in ECEF, rotated into ECI). ---
     const Vector3 g_eci = gravFn(veh_r);
@@ -420,7 +420,7 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     EntityState veh_state;
     veh_state.pos = veh_r;
     veh_state.vel = veh_v;
-    veh_state.mass = veh_mass;
+    veh_state.mass = veh_mass_kg;
     const EntityState veh_next = dyn->step(veh_state, drag_eci, Vector3{}, g_eci, cfg.dt);
     veh_r = veh_next.pos;
     veh_v = veh_next.vel;
@@ -436,9 +436,9 @@ SimResult runRoundEarth(const SimConfig& cfg) {
     tgt_v = tgt_next.vel;
   }
 
-  r.miss_distance = best_range;
-  r.intercept_time = best_t;
-  r.intercept = best_range < kLethalRadius;
+  r.miss_distance = best_range_m;
+  r.intercept_time = best_t_s;
+  r.intercept = best_range_m < kLethalRadius;
   return r;
 }
 
@@ -496,7 +496,7 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
   State2 veh{enuToEcef(cfg.vehicle.pos0, origin),
              enuVecToEcef(launchVelocity(cfg.vehicle), origin)};
   State2 tgt{enuToEcef(cfg.target.pos0, origin), enuVecToEcef(cfg.target.vel0, origin)};
-  double veh_mass = cfg.vehicle.mass0;
+  double veh_mass_kg = cfg.vehicle.mass0;
 
   // ECEF derivative: gravitation + fictitious forces (+ drag for the vehicle).
   auto deriv = [&](const State2& y, bool with_drag) -> State2 {
@@ -504,12 +504,12 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
     const Vector3 centrifugal = omega.cross(omega.cross(y.pos)) * (-1.0);
     Vector3 a = gravFn(y.pos) + coriolis + centrifugal;
     if (with_drag && cfg.env.atmosphere) {
-      double lat, lon, alt;
-      ecefToGeodetic(y.pos, lat, lon, alt);
-      const AtmSample atm = atmFn(alt);
+      double lat_rad, lon_rad, alt_m;
+      ecefToGeodetic(y.pos, lat_rad, lon_rad, alt_m);
+      const AtmSample atm = atmFn(alt_m);
       Vector3 air_vel = y.vel;  // atmosphere is stationary in ECEF (co-rotating)
-      if (wind.enabled) air_vel = y.vel - enuVecToEcef(windEnu(alt, wind), origin);
-      a += aero.dragForce(air_vel, atm) / veh_mass;
+      if (wind.enabled) air_vel = y.vel - enuVecToEcef(windEnu(alt_m, wind), origin);
+      a += aero.dragForce(air_vel, atm) / veh_mass_kg;
     }
     return {y.vel, a};
   };
@@ -522,8 +522,8 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
     return y + (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (dt / 6.0);
   };
 
-  double best_range = (tgt.pos - veh.pos).norm();
-  double best_t = 0.0;
+  double best_range_m = (tgt.pos - veh.pos).norm();
+  double best_t_s = 0.0;
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
   // Reserve the telemetry buffer up front (one frame per step; see runRoundEarth). Allocation-only
@@ -538,11 +538,11 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
     const Vector3 tgt_pos_enu = ecefToEnu(tgt.pos, origin);
     const Vector3 tgt_vel_enu = ecefVecToEnu(tgt.vel, origin);
 
-    double lat, lon, alt;
-    ecefToGeodetic(veh.pos, lat, lon, alt);
-    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt) : AtmSample{0.0, 0.0, 288.15, 340.29};
+    double lat_rad, lon_rad, alt_m;
+    ecefToGeodetic(veh.pos, lat_rad, lon_rad, alt_m);
+    const AtmSample atm = cfg.env.atmosphere ? atmFn(alt_m) : AtmSample{0.0, 0.0, 288.15, 340.29};
     Vector3 air_vel = veh.vel;
-    if (wind.enabled) air_vel = veh.vel - enuVecToEcef(windEnu(alt, wind), origin);
+    if (wind.enabled) air_vel = veh.vel - enuVecToEcef(windEnu(alt_m, wind), origin);
     const double mach = atm.speed_of_sound > 0.0 ? air_vel.norm() / atm.speed_of_sound : 0.0;
 
     EntityState veh_e, tgt_e;
@@ -556,7 +556,7 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
     f.t = t;
     f.veh_pos = veh_pos_enu;
     f.veh_vel = veh_vel_enu;
-    f.mass = veh_mass;
+    f.mass = veh_mass_kg;
     f.mach = mach;
     f.tgt_pos = tgt_pos_enu;
     f.tgt_vel = tgt_vel_enu;
@@ -574,24 +574,24 @@ SimResult runRoundEarthEcef(const SimConfig& cfg) {
     const Vector3 rel_pos = tgt.pos - veh.pos;
     const Vector3 rel_vel = tgt.vel - veh.vel;
     const double denom = rel_vel.normSq();
-    double s_star = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
-    if (s_star < 0.0) s_star = 0.0;
-    if (s_star > cfg.dt) s_star = cfg.dt;
-    const double cpa = (rel_pos + rel_vel * s_star).norm();
-    if (cpa < best_range) {
-      best_range = cpa;
-      best_t = t + s_star;
+    double s_star_s = denom > 0.0 ? -(rel_pos.dot(rel_vel)) / denom : 0.0;
+    if (s_star_s < 0.0) s_star_s = 0.0;
+    if (s_star_s > cfg.dt) s_star_s = cfg.dt;
+    const double cpa_m = (rel_pos + rel_vel * s_star_s).norm();
+    if (cpa_m < best_range_m) {
+      best_range_m = cpa_m;
+      best_t_s = t + s_star_s;
     }
 
-    if (alt < 0.0 && t > 0.0) break;
+    if (alt_m < 0.0 && t > 0.0) break;
 
     veh = rk4(veh, /*with_drag=*/true);
     tgt = rk4(tgt, /*with_drag=*/false);
   }
 
-  r.miss_distance = best_range;
-  r.intercept_time = best_t;
-  r.intercept = best_range < kLethalRadius;
+  r.miss_distance = best_range_m;
+  r.intercept_time = best_t_s;
+  r.intercept = best_range_m < kLethalRadius;
   return r;
 }
 
@@ -628,7 +628,7 @@ SimResult runSimulation(const SimConfig& cfg) {
   const bool use_cueing =
       cfg.cueing.enabled && cfg.trackers.enabled && !cfg.trackers.sensors.empty();
   bool launched = !use_cueing;  // default path is "already launched" at t=0
-  double launch_time = 0.0;
+  double launch_time_s = 0.0;
 
   // --- Vehicle initial state ---
   EntityState veh;
@@ -756,8 +756,8 @@ SimResult runSimulation(const SimConfig& cfg) {
   Discriminator discriminator(cfg.decoys, use_decoys ? static_cast<int>(scene.size()) : 1,
                               kTargetIndex);
 
-  double best_range = (tgt.pos - veh.pos).norm();
-  double best_t = 0.0;
+  double best_range_m = (tgt.pos - veh.pos).norm();
+  double best_t_s = 0.0;
   Vector3
       accel_achieved;  // realized guidance accel, lagged toward the command (finite autopilot τ)
 
@@ -779,13 +779,13 @@ SimResult runSimulation(const SimConfig& cfg) {
   // --- Boost phase bookkeeping (default off: thrust==0 => everything below is a no-op) ---
   const auto& prop = cfg.propulsion;
   // Linear propellant burn rate [kg/s].
-  const double m_dot = (prop.burn_time > 0.0 && prop.propellant_mass > 0.0)
-                           ? prop.propellant_mass / prop.burn_time
-                           : 0.0;
+  const double m_dot_kgps = (prop.burn_time > 0.0 && prop.propellant_mass > 0.0)
+                                ? prop.propellant_mass / prop.burn_time
+                                : 0.0;
   // Dry-mass floor so mass never drops to/through zero from burning propellant.
-  const double dry_mass_floor = std::max(cfg.vehicle.mass0 - prop.propellant_mass, 1e-6);
+  const double dry_mass_floor_kg = std::max(cfg.vehicle.mass0 - prop.propellant_mass, 1e-6);
   // Booster drag applies for t < stage_time, or t < burn_time when no staging is configured.
-  const double boost_drag_end = (prop.stage_time > 0.0) ? prop.stage_time : prop.burn_time;
+  const double boost_drag_end_s = (prop.stage_time > 0.0) ? prop.stage_time : prop.burn_time;
   bool staged = false;  // ensures the staging mass drop happens exactly once
 
   const int steps = static_cast<int>(cfg.t_end / cfg.dt);
@@ -815,8 +815,8 @@ SimResult runSimulation(const SimConfig& cfg) {
     // --- Environment / aero state ---
     const AtmSample atm = cfg.env.atmosphere ? environment->atmosphere(veh.pos.z)
                                              : AtmSample{0.0, 0.0, 288.15, 340.29};
-    const double speed = veh.vel.norm();
-    const double mach = atm.speed_of_sound > 0.0 ? speed / atm.speed_of_sound : 0.0;
+    const double speed_mps = veh.vel.norm();
+    const double mach = atm.speed_of_sound > 0.0 ? speed_mps / atm.speed_of_sound : 0.0;
     veh.mach = mach;
 
     // --- Truth engagement geometry (against the true target) ---
@@ -987,7 +987,7 @@ SimResult runSimulation(const SimConfig& cfg) {
         const bool timed_out = t >= cfg.cueing.max_cue_time;
         if (cov_ready || timed_out) {
           launched = true;
-          launch_time = t;
+          launch_time_s = t;
           veh.vel = leadIntercept(veh.pos, cfg.vehicle.launch_speed, track_pos_est, track_vel_est,
                                   cfg.cueing.loft_deg);
           if (is6dof && veh.vel.norm() > 1e-6) veh.att = quatFromTo({1, 0, 0}, veh.vel);
@@ -1072,9 +1072,9 @@ SimResult runSimulation(const SimConfig& cfg) {
         // accelerations; a real maneuvering target cannot pull more than a handful of g, so capping
         // at ~6 g rejects the differentiated-noise spikes that would otherwise saturate (and wreck)
         // the feedforward.
-        const double raw_mag = a_target_raw.norm();
-        if (raw_mag > kMaxTargetManeuver && raw_mag > 0.0) {
-          a_target_raw = a_target_raw * (kMaxTargetManeuver / raw_mag);
+        const double raw_mag_mps2 = a_target_raw.norm();
+        if (raw_mag_mps2 > kMaxTargetManeuver && raw_mag_mps2 > 0.0) {
+          a_target_raw = a_target_raw * (kMaxTargetManeuver / raw_mag_mps2);
         }
         // First-order low-pass to tame the residual noise in the numerical derivative.
         const double tau = cfg.guidance.apn_filter_tau;
@@ -1098,10 +1098,10 @@ SimResult runSimulation(const SimConfig& cfg) {
     // finite divert authority, hard-limited to divert_limit_mps2 (distinct from the aero lift cap).
     // Opt-in: disabled by default, so the legacy aero-steered command is byte-identical.
     if (cfg.guidance.divert.enabled && launched) {
-      const double divert_mag = accel_cmd.norm();
-      const double divert_limit = cfg.guidance.divert.divert_limit_mps2;
-      if (divert_mag > divert_limit && divert_mag > 0.0) {
-        accel_cmd = accel_cmd * (divert_limit / divert_mag);
+      const double divert_mag_mps2 = accel_cmd.norm();
+      const double divert_limit_mps2 = cfg.guidance.divert.divert_limit_mps2;
+      if (divert_mag_mps2 > divert_limit_mps2 && divert_mag_mps2 > 0.0) {
+        accel_cmd = accel_cmd * (divert_limit_mps2 / divert_mag_mps2);
       }
     }
 
@@ -1118,9 +1118,9 @@ SimResult runSimulation(const SimConfig& cfg) {
 
     // --- Boost: thrust along the velocity/nose, propellant burn (default off when thrust==0) ---
     const bool boosting = prop.thrust > 0.0 && t < prop.burn_time;
-    const double thrust_mag = boosting ? prop.thrust : 0.0;
+    const double thrust_mag_n = boosting ? prop.thrust : 0.0;
     // Booster drag uses the larger reference area while inside the boost window.
-    const bool use_boost_drag = prop.boost_ref_area > 0.0 && t < boost_drag_end;
+    const bool use_boost_drag = prop.boost_ref_area > 0.0 && t < boost_drag_end_s;
     const AeroModel& active_aero = use_boost_drag ? boost_aero : aero;
 
     // --- Forces / moments ---
@@ -1132,7 +1132,7 @@ SimResult runSimulation(const SimConfig& cfg) {
       // --- High-fidelity 6DOF (issue #35): table-driven aero force/moment + fin actuators ---
       // Force: table-driven normal force (Cn(alpha,Mach)) + drag, plus body-nose thrust.
       force_world = active_aero.force6dofHiFi(veh.vel, veh.att, atm);
-      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag;
+      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag_n;
       force_world += thrust_force;
 
       // Moment: the autopilot commands a body moment; control allocation converts it to a fin
@@ -1151,7 +1151,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     } else if (is6dof) {
       force_world = active_aero.force6dof(veh.vel, veh.att, atm);
       // Thrust acts along the body nose (body x-axis rotated into the world frame).
-      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag;
+      const Vector3 thrust_force = veh.att.rotate(Vector3{1.0, 0.0, 0.0}) * thrust_mag_n;
       force_world += thrust_force;
       moment_body = autopilot.moment(veh, accel_achieved, fin_deflection);
       specific_force = force_world / veh.mass;
@@ -1159,10 +1159,10 @@ SimResult runSimulation(const SimConfig& cfg) {
       // 3DOF point-mass: autopilot realizes the (lagged) PN command as lateral accel.
       const Vector3 drag = active_aero.dragForce(veh.vel, atm);
       // Thrust acts along the velocity direction; if (near-)stationary, along +x to get moving.
-      const double speed_for_thrust = veh.vel.norm();
+      const double speed_for_thrust_mps = veh.vel.norm();
       const Vector3 thrust_dir =
-          (speed_for_thrust > 1e-9) ? veh.vel / speed_for_thrust : Vector3{1.0, 0.0, 0.0};
-      const Vector3 thrust_force = thrust_dir * thrust_mag;
+          (speed_for_thrust_mps > 1e-9) ? veh.vel / speed_for_thrust_mps : Vector3{1.0, 0.0, 0.0};
+      const Vector3 thrust_force = thrust_dir * thrust_mag_n;
       force_world = drag + thrust_force + accel_achieved * veh.mass;
       specific_force = (drag + thrust_force) / veh.mass + accel_achieved;
     }
@@ -1181,7 +1181,7 @@ SimResult runSimulation(const SimConfig& cfg) {
     f.veh_att = veh.att;
     f.mass = veh.mass;
     f.mach = mach;
-    f.thrust = thrust_mag;
+    f.thrust = thrust_mag_n;
     f.tgt_pos = tgt.pos;
     f.tgt_vel = tgt.vel;
     f.accel_cmd = accel_cmd;
@@ -1219,13 +1219,13 @@ SimResult runSimulation(const SimConfig& cfg) {
     // its (huge, static) range to the threat must not pollute the closest-approach metric.
     if (launched) {
       const double denom = truth.rel_vel.normSq();
-      double s_star = denom > 0.0 ? -(truth.rel_pos.dot(truth.rel_vel)) / denom : 0.0;
-      if (s_star < 0.0) s_star = 0.0;
-      if (s_star > cfg.dt) s_star = cfg.dt;
-      const double cpa = (truth.rel_pos + truth.rel_vel * s_star).norm();
-      if (cpa < best_range) {
-        best_range = cpa;
-        best_t = t + s_star;
+      double s_star_s = denom > 0.0 ? -(truth.rel_pos.dot(truth.rel_vel)) / denom : 0.0;
+      if (s_star_s < 0.0) s_star_s = 0.0;
+      if (s_star_s > cfg.dt) s_star_s = cfg.dt;
+      const double cpa_m = (truth.rel_pos + truth.rel_vel * s_star_s).norm();
+      if (cpa_m < best_range_m) {
+        best_range_m = cpa_m;
+        best_t_s = t + s_star_s;
       }
 
       // --- Termination (only after launch) ---
@@ -1278,16 +1278,16 @@ SimResult runSimulation(const SimConfig& cfg) {
 
       // Burn propellant down to the dry-mass floor while thrusting (after the step uses this
       // step's mass for accel, so force_world and accel stay mass-consistent within the step).
-      if (boosting && m_dot > 0.0) {
-        veh.mass = std::max(veh.mass - m_dot * cfg.dt, dry_mass_floor);
+      if (boosting && m_dot_kgps > 0.0) {
+        veh.mass = std::max(veh.mass - m_dot_kgps * cfg.dt, dry_mass_floor_kg);
       }
     }
   }
 
-  r.miss_distance = best_range;
-  r.intercept_time = best_t;
-  r.launch_time = launch_time;
-  r.intercept = best_range < kLethalRadius;
+  r.miss_distance = best_range_m;
+  r.intercept_time = best_t_s;
+  r.launch_time = launch_time_s;
+  r.intercept = best_range_m < kLethalRadius;
   r.track_purity = jpda_assoc_total > 0 ? static_cast<double>(jpda_assoc_hits) /
                                               static_cast<double>(jpda_assoc_total)
                                         : 1.0;
