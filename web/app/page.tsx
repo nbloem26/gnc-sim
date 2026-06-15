@@ -38,6 +38,15 @@ const CesiumGlobe = dynamic(() => import('@/components/CesiumGlobe'), {
   loading: () => <div className="placeholder">Loading 3D globe…</div>,
 });
 
+// Studios area: the reusable studio framework (issue #104). It pulls in the
+// studio registry + the Plotly-backed <StudioShell>. Load client-only and only
+// when the "Studios" mode is active, so the registry, every studio, and Plotly
+// stay out of the first-load chunk.
+const StudiosArea = dynamic(() => import('@/components/studio/StudiosArea'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading studios…</div>,
+});
+
 export default function Home() {
   const [result, setResult] = useState<SimResult | null>(null);
   const [lastConfig, setLastConfig] = useState<SimConfig | null>(null);
@@ -46,6 +55,8 @@ export default function Home() {
   const [mock, setMock] = useState(false);
   const [modeKnown, setModeKnown] = useState(false);
   const [activeTab, setActiveTab] = useState('trajectory');
+  // Top-level surface: the engagement Simulator vs. the interactive Studios.
+  const [area, setArea] = useState<'simulator' | 'studios'>('simulator');
 
   // Warm the WASM module and resolve real-vs-mock on mount.
   useEffect(() => {
@@ -153,6 +164,31 @@ export default function Home() {
               {mock ? 'MOCK · sample data' : 'LIVE · WASM'}
             </span>
           ) : null}
+          <div
+            className="seg"
+            role="tablist"
+            aria-label="Surface"
+            style={{ marginLeft: 'auto' }}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'simulator'}
+              className={area === 'simulator' ? 'segActive' : ''}
+              onClick={() => setArea('simulator')}
+            >
+              Simulator
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'studios'}
+              className={area === 'studios' ? 'segActive' : ''}
+              onClick={() => setArea('studios')}
+            >
+              Studios
+            </button>
+          </div>
         </div>
         <p className="muted">
           Pick a scenario on the left and run a real engagement — the deterministic C++
@@ -163,6 +199,11 @@ export default function Home() {
         </p>
       </div>
 
+      {area === 'studios' ? (
+        // Lazy-mounted: the Studios chunk (registry + studios + Plotly shell)
+        // is only fetched/instantiated once this branch renders.
+        <StudiosArea />
+      ) : (
       <div className="shell">
         <ParamForm onRun={handleRun} running={running} />
 
@@ -214,6 +255,7 @@ export default function Home() {
           )}
         </div>
       </div>
+      )}
     </>
   );
 }
