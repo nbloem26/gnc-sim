@@ -714,3 +714,133 @@ button.primary:hover:not(:disabled) {
   width: 100%;
   height: 240px;
 }
+
+/* ---- Studios (reusable studio framework, issue #104) ---------------------- */
+.studioPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.studioPickerBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 8px 14px;
+  margin-bottom: -1px;
+}
+.studioPickerBtn:hover:not(.studioPickerActive) {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.studioPickerActive {
+  color: var(--accent);
+  background: var(--panel-2);
+  border-color: var(--border);
+  border-bottom: 1px solid var(--panel-2);
+}
+
+/* Two-column shell: param panel + plot grid. Collapses on narrow screens. */
+.studioShell {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .studioShell {
+    grid-template-columns: 1fr;
+  }
+}
+.studioPanel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  position: sticky;
+  top: 16px;
+}
+.studioPanelTitle {
+  font-size: 13px;
+  color: var(--accent-2);
+  margin: 0 0 12px;
+}
+.studioPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.studioPresetBtn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Numeric param: slider + number input on one row, with the live value. */
+.studioValue {
+  float: right;
+  color: var(--accent);
+  font-size: 12px;
+}
+.studioNumberRow {
+  display: grid;
+  grid-template-columns: 1fr 84px;
+  gap: 8px;
+  align-items: center;
+}
+.studioSlider {
+  width: 100%;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.studioNumberInput {
+  width: 100%;
+}
+.studioHelp {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.studioMain {
+  min-width: 0;
+}
+.studioHeader {
+  margin-bottom: 14px;
+}
+.studioTitle {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.studioComputing {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: normal;
+}
+.studioDesc {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Responsive plot grid: auto-fit columns, one column when narrow. */
+.studioGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+@media (max-width: 720px) {
+  .studioGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.studioPlotCard {
+  min-width: 0;
+}
+.studioPlotTitle {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
