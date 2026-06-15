@@ -5,7 +5,7 @@
 line-length = 100
 target-version = "py311"
 # Notebooks carry exploratory patterns (cell magics, out-of-order imports); lint the .py only.
-extend-exclude = ["*.ipynb", ".venv", "build-native", "build-wasm", "build-python"]
+extend-exclude = ["*.ipynb", ".venv*", "build-*"]  # .venv* covers .venv-lint; build-* covers build-cov/python/fmi
 
 [tool.ruff.lint]
 # pycodestyle (E/W), pyflakes (F), isort (I), pyupgrade (UP), flake8-bugbear (B).
