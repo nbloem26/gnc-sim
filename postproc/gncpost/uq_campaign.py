@@ -77,8 +77,8 @@ def make_convergence_figure(
     run_cli(cfg_path, out_root, seed=seed)
 
     summary = load_summary(out_root)
-    miss = np.asarray(summary["miss_distance"], dtype=float)
-    points = convergence(miss, cep_stat, seed=seed)
+    miss_m = np.asarray(summary["miss_distance"], dtype=float)
+    points = convergence(miss_m, cep_stat, seed=seed)
     fig = plot_convergence(points, metric_label="CEP [m]")
 
     POSTPROC_FIG.mkdir(parents=True, exist_ok=True)
@@ -130,12 +130,12 @@ def _make_sim_model(cfg: dict, work_dir: Path):
         x = np.atleast_2d(np.asarray(x, dtype=float))
         out = np.empty(x.shape[0])
         for k, row in enumerate(x):
-            speed, elev, pos_off, phase = row
+            speed_mps, elev_deg, pos_off_m, phase_deg = row
             c = json.loads(json.dumps(base))
-            c["vehicle"]["launch_speed"] = float(speed)
-            c["vehicle"]["launch_elevation_deg"] = float(elev)
-            c["target"]["pos0"] = [v + float(pos_off) for v in tgt_nominal]
-            c["target"]["maneuver_phase_deg"] = float(phase)
+            c["vehicle"]["launch_speed"] = float(speed_mps)
+            c["vehicle"]["launch_elevation_deg"] = float(elev_deg)
+            c["target"]["pos0"] = [v + float(pos_off_m) for v in tgt_nominal]
+            c["target"]["maneuver_phase_deg"] = float(phase_deg)
             run_d = work_dir / f"s{counter['i']:05d}"
             counter["i"] += 1
             cfg_path = run_d / "config.json"

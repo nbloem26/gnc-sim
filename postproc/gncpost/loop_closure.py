@@ -107,18 +107,18 @@ def run_loop_closure(white_tol_frac: float = 0.15, make_figure: bool = True) -> 
     if sensors.empty or "imu_accel_meas_x" not in sensors:
         raise RuntimeError("sensors.csv missing imu_accel_meas_x — was sensors.enable true?")
 
-    dt = cfg["dt"]
+    dt_s = cfg["dt"]
     sf = imu_cfg["accel_scale_factor"]
     # Residual isolates additive bias + white (remove the multiplicative scale-factor term).
     residual = sensors["imu_accel_meas_x"].to_numpy() - sensors["imu_accel_true_x"].to_numpy() * (
         1.0 + sf
     )
     # Drop any leading transient (first 1 s) and de-mean.
-    skip = int(round(1.0 / dt))
+    skip = int(round(1.0 / dt_s))
     residual = residual[skip:]
     residual = residual - np.mean(residual)
 
-    taus, adev, edf = overlapping_allan_deviation(residual, dt, num_points=80)
+    taus, adev, edf = overlapping_allan_deviation(residual, dt_s, num_points=80)
     fit = identify_regimes(taus, adev, edf)
 
     cfg_white = imu_cfg["accel_white"]
@@ -141,7 +141,7 @@ def run_loop_closure(white_tol_frac: float = 0.15, make_figure: bool = True) -> 
         config_sigma_gm=cfg_sigma_gm,
         recovered_sigma_gm=fit.sigma_gm,
         n_samples=residual.size,
-        dt=dt,
+        dt=dt_s,
         passed=passed,
     )
 

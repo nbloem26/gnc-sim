@@ -45,8 +45,8 @@ def _write_config(tmp: Path, name: str, cfg: dict) -> Path:
 # --------------------------------------------------------------------------------------
 def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
     """Atmosphere off, guidance none: vehicle follows x=vx0 t, z=vz0 t - 0.5 g t^2."""
-    g = 9.80665
-    speed, elev = 300.0, 45.0
+    g_mps2 = 9.80665
+    speed_mps, elev_deg = 300.0, 45.0
     cfg = {
         "scenario": "val_ballistic",
         "model": "3dof",
@@ -54,12 +54,12 @@ def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
         "dt": 0.002,
         "t_end": 30.0,
         "integrator": "rk4",
-        "env": {"g0": g, "altitude_dependent_g": False, "atmosphere": False},
+        "env": {"g0": g_mps2, "altitude_dependent_g": False, "atmosphere": False},
         "aero": {"ref_area": 0.02, "cd_mach": [[0.0, 0.3]]},
         "vehicle": {
             "pos0": [0, 0, 0],
-            "launch_speed": speed,
-            "launch_elevation_deg": elev,
+            "launch_speed": speed_mps,
+            "launch_elevation_deg": elev_deg,
             "launch_azimuth_deg": 0,
             "mass0": 22.0,
         },
@@ -69,17 +69,17 @@ def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
     }
     out = run_cli(_write_config(tmp, "ballistic", cfg), tmp / "ballistic")
     veh = load_run(out).vehicle
-    t = veh["t"].to_numpy()
-    vx0 = speed * np.cos(np.radians(elev))
-    vz0 = speed * np.sin(np.radians(elev))
-    x_an = vx0 * t
-    z_an = vz0 * t - 0.5 * g * t * t
-    err = np.sqrt((veh["x"] - x_an) ** 2 + (veh["z"] - z_an) ** 2).max()
+    t_s = veh["t"].to_numpy()
+    vx0_mps = speed_mps * np.cos(np.radians(elev_deg))
+    vz0_mps = speed_mps * np.sin(np.radians(elev_deg))
+    x_an_m = vx0_mps * t_s
+    z_an_m = vz0_mps * t_s - 0.5 * g_mps2 * t_s * t_s
+    err_m = np.sqrt((veh["x"] - x_an_m) ** 2 + (veh["z"] - z_an_m) ** 2).max()
     return CheckResult(
         "ballistic_parabola",
-        err < tol_m,
-        f"max |pos - analytic| = {err * 1e3:.3f} mm over {len(t)} steps",
-        metric=float(err),
+        err_m < tol_m,
+        f"max |pos - analytic| = {err_m * 1e3:.3f} mm over {len(t_s)} steps",
+        metric=float(err_m),
         tolerance=tol_m,
     )
 
@@ -89,8 +89,8 @@ def check_ballistic(tmp: Path, tol_m: float = 0.05) -> CheckResult:
 # --------------------------------------------------------------------------------------
 def check_terminal_velocity(tmp: Path, tol_frac: float = 0.02) -> CheckResult:
     """Heavy-drag vertical drop reaches v_term = sqrt(2 m g / (rho Cd A))."""
-    g, mass, cd, area = 9.80665, 5.0, 1.0, 0.05
-    drop_alt = 2000.0
+    g_mps2, mass_kg, cd, area = 9.80665, 5.0, 1.0, 0.05
+    drop_alt_m = 2000.0
     cfg = {
         "scenario": "val_vterm",
         "model": "3dof",
@@ -98,14 +98,14 @@ def check_terminal_velocity(tmp: Path, tol_frac: float = 0.02) -> CheckResult:
         "dt": 0.002,
         "t_end": 120.0,
         "integrator": "rk4",
-        "env": {"g0": g, "altitude_dependent_g": False, "atmosphere": True},
+        "env": {"g0": g_mps2, "altitude_dependent_g": False, "atmosphere": True},
         "aero": {"ref_area": area, "cd_mach": [[0.0, cd], [5.0, cd]]},
         "vehicle": {
-            "pos0": [0, 0, drop_alt],
+            "pos0": [0, 0, drop_alt_m],
             "launch_speed": 0.001,
             "launch_elevation_deg": -90,
             "launch_azimuth_deg": 0,
-            "mass0": mass,
+            "mass0": mass_kg,
         },
         "guidance": {"law": "none"},
         "sensors": {"enable": False},
@@ -118,15 +118,15 @@ def check_terminal_velocity(tmp: Path, tol_frac: float = 0.02) -> CheckResult:
     mask = (veh["z"] > 200) & (veh["z"] < 800) & (veh["vz"] < 0)
     if mask.sum() < 5:
         mask = veh["vz"] < 0
-    vz_sim = float(veh.loc[mask, "vz"].mean())
-    z_mean = float(veh.loc[mask, "z"].mean())
-    v_term = terminal_velocity(mass, cd, area, z_mean, g)
-    err = abs(abs(vz_sim) - v_term) / v_term
+    vz_sim_mps = float(veh.loc[mask, "vz"].mean())
+    z_mean_m = float(veh.loc[mask, "z"].mean())
+    v_term_mps = terminal_velocity(mass_kg, cd, area, z_mean_m, g_mps2)
+    err = abs(abs(vz_sim_mps) - v_term_mps) / v_term_mps
     return CheckResult(
         "terminal_velocity",
         err < tol_frac,
-        f"sim |vz|={abs(vz_sim):.2f} m/s vs analytic {v_term:.2f} m/s "
-        f"(rho @ z={z_mean:.0f} m), err {err * 100:.2f}%",
+        f"sim |vz|={abs(vz_sim_mps):.2f} m/s vs analytic {v_term_mps:.2f} m/s "
+        f"(rho @ z={z_mean_m:.0f} m), err {err * 100:.2f}%",
         metric=float(err),
         tolerance=tol_frac,
     )
@@ -184,12 +184,12 @@ def check_pronav_intercept(tmp: Path, tol_m: float = 1.0) -> CheckResult:
     }
     out = run_cli(_write_config(tmp, "pronav", cfg), tmp / "pronav")
     run = load_run(out)
-    miss = run.miss_distance
+    miss_m = run.miss_distance
     return CheckResult(
         "pronav_intercept",
-        run.intercept and miss < tol_m,
-        f"intercept={run.intercept}, miss_distance={miss * 1e2:.2f} cm",
-        metric=float(miss),
+        run.intercept and miss_m < tol_m,
+        f"intercept={run.intercept}, miss_distance={miss_m * 1e2:.2f} cm",
+        metric=float(miss_m),
         tolerance=tol_m,
     )
 

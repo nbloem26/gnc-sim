@@ -46,15 +46,15 @@ def _base_conditions():
     base_t = [T0]
     base_p = [P0]
     for i in range(1, len(_LAYERS)):
-        h_prev, lapse_prev = _LAYERS[i - 1]
-        dh = _LAYERS[i][0] - h_prev
-        t_top = base_t[i - 1] + lapse_prev * dh
+        h_prev_m, lapse_prev = _LAYERS[i - 1]
+        dh_m = _LAYERS[i][0] - h_prev_m
+        t_top_k = base_t[i - 1] + lapse_prev * dh_m
         if lapse_prev == 0.0:
-            p = base_p[i - 1] * np.exp(-G0 * dh / (R_GAS * base_t[i - 1]))
+            p_pa = base_p[i - 1] * np.exp(-G0 * dh_m / (R_GAS * base_t[i - 1]))
         else:
-            p = base_p[i - 1] * (t_top / base_t[i - 1]) ** (-G0 / (lapse_prev * R_GAS))
-        base_t.append(t_top)
-        base_p.append(p)
+            p_pa = base_p[i - 1] * (t_top_k / base_t[i - 1]) ** (-G0 / (lapse_prev * R_GAS))
+        base_t.append(t_top_k)
+        base_p.append(p_pa)
     return base_t, base_p
 
 
@@ -73,38 +73,38 @@ class AtmSample:
 
 def ussa76(altitude_m: float) -> AtmSample:
     """Return the USSA76 atmospheric sample at a geometric altitude [m] (0..86 km)."""
-    z = float(np.clip(altitude_m, 0.0, 86000.0))
-    h = min(RE_USSA * z / (RE_USSA + z), TOP_H)  # geopotential altitude
+    z_m = float(np.clip(altitude_m, 0.0, 86000.0))
+    h_m = min(RE_USSA * z_m / (RE_USSA + z_m), TOP_H)  # geopotential altitude
 
     idx = 0
-    for i, (base_h, _l) in enumerate(_LAYERS):
-        if h >= base_h:
+    for i, (base_h_m, _l) in enumerate(_LAYERS):
+        if h_m >= base_h_m:
             idx = i
         else:
             break
 
-    base_h, lapse = _LAYERS[idx]
-    tb, pb = _BASE_T[idx], _BASE_P[idx]
-    dh = h - base_h
+    base_h_m, lapse = _LAYERS[idx]
+    tb_k, pb_pa = _BASE_T[idx], _BASE_P[idx]
+    dh_m = h_m - base_h_m
 
     if lapse == 0.0:
-        temperature = tb
-        pressure = pb * np.exp(-G0 * dh / (R_GAS * tb))
+        temperature_k = tb_k
+        pressure_pa = pb_pa * np.exp(-G0 * dh_m / (R_GAS * tb_k))
     else:
-        temperature = tb + lapse * dh
-        pressure = pb * (temperature / tb) ** (-G0 / (lapse * R_GAS))
+        temperature_k = tb_k + lapse * dh_m
+        pressure_pa = pb_pa * (temperature_k / tb_k) ** (-G0 / (lapse * R_GAS))
 
-    density = pressure / (R_GAS * temperature)
-    sound_speed = np.sqrt(GAMMA * R_GAS * temperature)
-    return AtmSample(temperature, pressure, density, sound_speed)
+    density_kgpm3 = pressure_pa / (R_GAS * temperature_k)
+    sound_speed_mps = np.sqrt(GAMMA * R_GAS * temperature_k)
+    return AtmSample(temperature_k, pressure_pa, density_kgpm3, sound_speed_mps)
 
 
 def terminal_velocity(
     mass: float, cd: float, ref_area: float, altitude_m: float, g: float = G0
 ) -> float:
     """Closed-form terminal velocity v = sqrt(2 m g / (rho Cd A)) using USSA76 density."""
-    rho = ussa76(altitude_m).density
-    return float(np.sqrt(2.0 * mass * g / (rho * cd * ref_area)))
+    rho_kgpm3 = ussa76(altitude_m).density
+    return float(np.sqrt(2.0 * mass * g / (rho_kgpm3 * cd * ref_area)))
 
 
 # Published USSA76 reference values (NASA TM-X-74335 tables), for validation asserts.

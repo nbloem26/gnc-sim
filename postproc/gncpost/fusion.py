@@ -63,10 +63,10 @@ class FusionResult:
 def track_rms(track: pd.DataFrame, settle_steps: int = SETTLE_STEPS) -> float:
     """RMS Euclidean error of the fused track estimate vs the true target position."""
     df = track.iloc[settle_steps:] if len(track) > settle_steps else track
-    dx = df["track_x"].to_numpy() - df["tgt_x"].to_numpy()
-    dy = df["track_y"].to_numpy() - df["tgt_y"].to_numpy()
-    dz = df["track_z"].to_numpy() - df["tgt_z"].to_numpy()
-    sq = dx * dx + dy * dy + dz * dz
+    dx_m = df["track_x"].to_numpy() - df["tgt_x"].to_numpy()
+    dy_m = df["track_y"].to_numpy() - df["tgt_y"].to_numpy()
+    dz_m = df["track_z"].to_numpy() - df["tgt_z"].to_numpy()
+    sq = dx_m * dx_m + dy_m * dy_m + dz_m * dz_m
     return float(np.sqrt(np.mean(sq)))
 
 
@@ -120,12 +120,12 @@ def plot_fusion(results: list[FusionResult]):
 
     for r, color in zip(results, colors[: len(results)], strict=False):
         df = r.track.iloc[SETTLE_STEPS:]
-        err = np.sqrt(
+        err_m = np.sqrt(
             (df["track_x"].to_numpy() - df["tgt_x"].to_numpy()) ** 2
             + (df["track_y"].to_numpy() - df["tgt_y"].to_numpy()) ** 2
             + (df["track_z"].to_numpy() - df["tgt_z"].to_numpy()) ** 2
         )
-        ax_time.plot(df["t"].to_numpy(), err, label=r.label, color=color, lw=1.2)
+        ax_time.plot(df["t"].to_numpy(), err_m, label=r.label, color=color, lw=1.2)
     ax_time.set_xlabel("time [s]")
     ax_time.set_ylabel("track-position error [m]")
     ax_time.set_yscale("log")
