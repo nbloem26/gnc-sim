@@ -94,9 +94,9 @@ QuatState integrateAttitude(const QuatState& y0, const Vector3& omega, double dt
 // ---------------------------------------------------------------------------
 EntityState step3dof(const EntityState& s, const Vector3& force_world, const Vector3& gravity,
                      double dt, Integrator integ) {
-  const Vector3 accel = force_world / s.mass + gravity;
+  const Vector3 accel_mps2 = force_world / s.mass + gravity;
 
-  const TransState y1 = integrateTranslation({s.pos, s.vel}, accel, dt, integ);
+  const TransState y1 = integrateTranslation({s.pos, s.vel}, accel_mps2, dt, integ);
 
   EntityState out = s;  // copy through att, angVel, mass, mach
   out.t = s.t + dt;
@@ -118,28 +118,28 @@ EntityState step3dof(const EntityState& s, const Vector3& force_world, const Vec
 EntityState step6dof(const EntityState& s, const Vector3& force_world, const Vector3& moment_body,
                      double inertia, const Vector3& gravity, double dt, Integrator integ) {
   // --- Translational (identical to 3DOF). ---
-  const Vector3 accel = force_world / s.mass + gravity;
-  const TransState yt = integrateTranslation({s.pos, s.vel}, accel, dt, integ);
+  const Vector3 accel_mps2 = force_world / s.mass + gravity;
+  const TransState yt = integrateTranslation({s.pos, s.vel}, accel_mps2, dt, integ);
 
   // --- Rotational rate: alpha constant over the step. ---
   // Reuse the translational integrator on a {dummy, omega} pair so omega advances with the
   // chosen scheme. Here the omega derivative is the constant alpha, so this is exact for RK2/RK4.
   const Vector3 alpha = moment_body / inertia;
   const TransState yr = integrateTranslation({Vector3{}, s.angVel}, alpha, dt, integ);
-  const Vector3 omega_new = yr.vel;
+  const Vector3 omega_new_radps = yr.vel;
 
   // --- Attitude: propagate quaternion with the MIDPOINT body rate, then renormalize. ---
   // omega varies linearly across the step (alpha constant), so the step-averaged rate is the
   // midpoint value omega + alpha*dt/2. Using it makes the integrated angle exact for constant
   // torque (the pre-step rate would leave an O(alpha*dt^2)-per-step bias that accumulates).
-  const Vector3 omega_mid = s.angVel + alpha * (0.5 * dt);
-  const QuatState yq = integrateAttitude({s.att}, omega_mid, dt, integ);
+  const Vector3 omega_mid_radps = s.angVel + alpha * (0.5 * dt);
+  const QuatState yq = integrateAttitude({s.att}, omega_mid_radps, dt, integ);
 
   EntityState out = s;  // copy through mass, mach
   out.t = s.t + dt;
   out.pos = yt.pos;
   out.vel = yt.vel;
-  out.angVel = omega_new;
+  out.angVel = omega_new_radps;
   out.att = yq.q.normalized();  // keep attitude a unit quaternion
   return out;
 }
