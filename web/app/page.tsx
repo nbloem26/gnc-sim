@@ -140,7 +140,7 @@ export default function Home() {
         <div
           style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
         >
-          <h1 style={{ marginBottom: 0 }}>Interactive GNC Simulator</h1>
+          <h1 style={{ marginBottom: 0 }}>Interactive GNC engagement simulator</h1>
           {modeKnown ? (
             <span
               className={`badge ${mock ? 'mock' : 'real'}`}
@@ -155,8 +155,11 @@ export default function Home() {
           ) : null}
         </div>
         <p className="muted">
-          Adjust the scenario on the left and run a proportional-navigation homing
-          engagement. The C++ flight-dynamics core executes entirely in your browser.
+          Pick a scenario on the left and run a real engagement — the deterministic C++
+          guidance, navigation &amp; control core executes entirely in your browser via
+          WebAssembly. Models span 3/6-DOF flight dynamics, EKF / IMM / JPDA estimation,
+          radar &amp; IR fusion, PN / APN / optimal (ZEM-ZEV) guidance, ballistic &amp; hypersonic
+          threats, and many-on-many campaigns.
         </p>
       </div>
 

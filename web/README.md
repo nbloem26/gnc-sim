@@ -1,8 +1,11 @@
-# GNC Sim — Web App
+# GNC Studio — Web App
 
-Interactive guidance, navigation & control simulator. The C++ flight-dynamics
-core is cross-compiled to WebAssembly and runs **entirely in the browser** — no
-backend. Built with Next.js (App Router, TypeScript), Plotly.js, and Leaflet.
+**GNC Studio** is an interactive guided-interceptor guidance, navigation & control
+simulator. The deterministic C++ core is cross-compiled to WebAssembly and runs
+**entirely in the browser** — no backend. It spans 3/6-DOF flight dynamics, EKF/IMM/JPDA
+estimation, radar/IR fusion & phenomenology, PN/APN/optimal guidance, ballistic & hypersonic
+threats, and many-on-many engagement campaigns, with a 3D Cesium globe and Monte-Carlo UQ.
+Built with Next.js (App Router, TypeScript), Plotly.js, Leaflet, and CesiumJS.
 
 ## Develop
 
