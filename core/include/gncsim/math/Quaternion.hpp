@@ -75,16 +75,16 @@ struct Quaternion {
     const Quaternion q = normalized();
     const double sinr_cosp = 2.0 * (q.w * q.x + q.y * q.z);
     const double cosr_cosp = 1.0 - 2.0 * (q.x * q.x + q.y * q.y);
-    const double roll = std::atan2(sinr_cosp, cosr_cosp);
+    const double roll_rad = std::atan2(sinr_cosp, cosr_cosp);
 
     double sinp = 2.0 * (q.w * q.y - q.z * q.x);
     sinp = sinp > 1.0 ? 1.0 : (sinp < -1.0 ? -1.0 : sinp);
-    const double pitch = std::asin(sinp);
+    const double pitch_rad = std::asin(sinp);
 
     const double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
     const double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
-    const double yaw = std::atan2(siny_cosp, cosy_cosp);
-    return {roll, pitch, yaw};
+    const double yaw_rad = std::atan2(siny_cosp, cosy_cosp);
+    return {roll_rad, pitch_rad, yaw_rad};
   }
 
   // Quaternion derivative for body angular rate omega (rad/s). q_dot = 0.5 * q ⊗ [0, omega].

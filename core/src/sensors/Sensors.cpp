@@ -95,39 +95,40 @@ inline double stepAxisBias(double& bias, double white, double bias_instability, 
 void Imu::measure(const Vector3& accel_true, const Vector3& gyro_true, Vector3& accel_meas,
                   Vector3& gyro_meas) {
   // --- Accelerometer (per axis) ---
-  const Vector3 accel_white{
+  const Vector3 accel_white_mps2{
       stepAxisBias(accel_bias_.x, cfg_.accel_white, cfg_.accel_bias_instability,
                    cfg_.accel_bias_tau, cfg_.accel_rrw, dt_, rng_),
       stepAxisBias(accel_bias_.y, cfg_.accel_white, cfg_.accel_bias_instability,
                    cfg_.accel_bias_tau, cfg_.accel_rrw, dt_, rng_),
       stepAxisBias(accel_bias_.z, cfg_.accel_white, cfg_.accel_bias_instability,
                    cfg_.accel_bias_tau, cfg_.accel_rrw, dt_, rng_)};
-  accel_meas = accel_true * (1.0 + cfg_.accel_scale_factor) + accel_bias_ + accel_white;
+  accel_meas = accel_true * (1.0 + cfg_.accel_scale_factor) + accel_bias_ + accel_white_mps2;
 
   // --- Gyro (per axis) ---
-  const Vector3 gyro_white{stepAxisBias(gyro_bias_.x, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
-                           stepAxisBias(gyro_bias_.y, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_),
-                           stepAxisBias(gyro_bias_.z, cfg_.gyro_white, cfg_.gyro_bias_instability,
-                                        cfg_.gyro_bias_tau, cfg_.gyro_rrw, dt_, rng_)};
-  gyro_meas = gyro_true * (1.0 + cfg_.gyro_scale_factor) + gyro_bias_ + gyro_white;
+  const Vector3 gyro_white_radps{
+      stepAxisBias(gyro_bias_.x, cfg_.gyro_white, cfg_.gyro_bias_instability, cfg_.gyro_bias_tau,
+                   cfg_.gyro_rrw, dt_, rng_),
+      stepAxisBias(gyro_bias_.y, cfg_.gyro_white, cfg_.gyro_bias_instability, cfg_.gyro_bias_tau,
+                   cfg_.gyro_rrw, dt_, rng_),
+      stepAxisBias(gyro_bias_.z, cfg_.gyro_white, cfg_.gyro_bias_instability, cfg_.gyro_bias_tau,
+                   cfg_.gyro_rrw, dt_, rng_)};
+  gyro_meas = gyro_true * (1.0 + cfg_.gyro_scale_factor) + gyro_bias_ + gyro_white_radps;
 }
 
 double Seeker::measureLos(double los_true, double range) {
-  double meas = los_true + cfg_.los_bias;
+  double meas_rad = los_true + cfg_.los_bias;
 
   if (cfg_.los_white > 0.0) {
-    meas += rng_.gaussian(0.0, cfg_.los_white);
+    meas_rad += rng_.gaussian(0.0, cfg_.los_white);
   }
 
   // Range-dependent glint: std grows as range -> 0, clamped at 1.0 m to stay finite.
   if (cfg_.glint > 0.0) {
-    const double r = range > 1.0 ? range : 1.0;
-    meas += rng_.gaussian(0.0, cfg_.glint / r);
+    const double r_m = range > 1.0 ? range : 1.0;
+    meas_rad += rng_.gaussian(0.0, cfg_.glint / r_m);
   }
 
-  return meas;
+  return meas_rad;
 }
 
 }  // namespace gncsim
