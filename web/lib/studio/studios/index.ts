@@ -13,8 +13,9 @@ import { exampleStudio } from './exampleStudio';
 // Sensing
 import { radarStudio } from './radarStudio';
 import { fusionStudio } from './fusionStudio';
-// Guidance & estimation
+// Guidance, control & estimation
 import { guidanceStudio } from './guidanceStudio';
+import { controlsStudio } from './controlsStudio';
 import { filterStudio } from './filterStudio';
 // Threats & environment
 import { threatStudio } from './threatStudio';
@@ -27,6 +28,7 @@ registerStudio(exampleStudio);
 registerStudio(radarStudio);
 registerStudio(fusionStudio);
 registerStudio(guidanceStudio);
+registerStudio(controlsStudio);
 registerStudio(filterStudio);
 registerStudio(threatStudio);
 registerStudio(environmentStudio);
