@@ -51,3 +51,15 @@ still builds and runs in **mock mode**, serving `web/public/sample_result.json`.
 
 Vercel serves `.wasm` files with the correct `application/wasm` content type, so
 the Emscripten loader streams/instantiates the module without extra headers.
+
+## Monorepo gotcha (why `framework` is `null`)
+
+The app's `package.json` lives in `web/`, not the repo root. If `vercel.json` sets
+`"framework": "nextjs"`, Vercel looks for `next` in a **root** `package.json` and fails
+with *"No Next.js version detected."* So `vercel.json` uses **`"framework": null`** ("Other")
+and an explicit `buildCommand: "cd web && npm run build"`. Using `npm run build` (not Vercel's
+default `next build`) is deliberate — it fires the `prebuild` hook that syncs scenarios and
+copies the Cesium assets. The Next.js static export in `web/out` is then served as plain static files.
+
+**Dashboard alternative:** set **Root Directory = `web`** *and* override the Build Command to
+`npm run build` (so the prebuild runs); then no root `vercel.json` is needed.
