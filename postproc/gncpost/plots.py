@@ -82,8 +82,8 @@ def plot_states(run: Run):
     ax.legend(fontsize=8)
 
     ax = axes[1, 0]
-    speed = np.sqrt(veh["vx"] ** 2 + veh["vy"] ** 2 + veh["vz"] ** 2)
-    ax.plot(t, speed, color="#2ca02c")
+    speed_mps = np.sqrt(veh["vx"] ** 2 + veh["vy"] ** 2 + veh["vz"] ** 2)
+    ax.plot(t, speed_mps, color="#2ca02c")
     ax.set_ylabel("speed [m/s]")
     ax.set_xlabel("t [s]")
     ax.set_title("Speed")
@@ -123,8 +123,8 @@ def plot_guidance(run: Run):
     ax1b.set_ylabel("closing [m/s]")
     axes[1].set_title("Range & closing velocity")
 
-    acc = np.sqrt(gnc["accel_cmd_x"] ** 2 + gnc["accel_cmd_y"] ** 2 + gnc["accel_cmd_z"] ** 2)
-    axes[2].plot(t, acc, color="#9467bd")
+    acc_mps2 = np.sqrt(gnc["accel_cmd_x"] ** 2 + gnc["accel_cmd_y"] ** 2 + gnc["accel_cmd_z"] ** 2)
+    axes[2].plot(t, acc_mps2, color="#9467bd")
     axes[2].set_ylabel("|a_cmd| [m/s^2]")
     axes[2].set_xlabel("t [s]")
     axes[2].set_title("Acceleration command magnitude")
@@ -137,16 +137,16 @@ def plot_guidance(run: Run):
 
 def plot_miss_histogram(summary, cep: float | None = None, mean: float | None = None):
     """Miss-distance histogram with CEP / mean markers from a Monte-Carlo summary."""
-    miss = np.asarray(summary["miss_distance"], dtype=float)
+    miss_m = np.asarray(summary["miss_distance"], dtype=float)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(miss, bins=30, color="#1f77b4", alpha=0.8, edgecolor="white")
+    ax.hist(miss_m, bins=30, color="#1f77b4", alpha=0.8, edgecolor="white")
     if cep is not None:
         ax.axvline(cep, color="#d62728", lw=2, ls="--", label=f"CEP (50%) = {cep:.1f} m")
     if mean is not None:
         ax.axvline(mean, color="#2ca02c", lw=2, ls=":", label=f"mean = {mean:.1f} m")
     ax.set_xlabel("miss distance [m]")
     ax.set_ylabel("count")
-    ax.set_title(f"Miss-distance distribution ({len(miss)} cases)")
+    ax.set_title(f"Miss-distance distribution ({len(miss_m)} cases)")
     ax.grid(True, ls="--", alpha=0.3)
     ax.legend()
     fig.tight_layout()

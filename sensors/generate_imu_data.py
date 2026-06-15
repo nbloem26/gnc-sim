@@ -87,27 +87,27 @@ def generate(
     Returns a dict with ``dt``, ``t``, ``accel`` (n,3), ``gyro`` (n,3) and the
     TRUE parameter objects, and also persists it to ``imu_raw.npz``.
     """
-    dt = 1.0 / rate_hz
+    dt_s = 1.0 / rate_hz
     n = int(round(duration_s * rate_hz))
     rng = np.random.default_rng(seed)
 
     accel = np.column_stack(
-        [generate_axis(n, dt, TRUE_ACCEL, rng, true_signal=0.0) for _ in range(3)]
+        [generate_axis(n, dt_s, TRUE_ACCEL, rng, true_signal=0.0) for _ in range(3)]
     )
     gyro = np.column_stack(
-        [generate_axis(n, dt, TRUE_GYRO, rng, true_signal=0.0) for _ in range(3)]
+        [generate_axis(n, dt_s, TRUE_GYRO, rng, true_signal=0.0) for _ in range(3)]
     )
-    t = np.arange(n) * dt
+    t_s = np.arange(n) * dt_s
 
     # Ground-truth labels: Monte-Carlo characterization of the exact generator (same
     # extractor as recovery), so recovered-vs-true is apples-to-apples.
-    true_accel = true_labels(TRUE_ACCEL, dt, n)
-    true_gyro = true_labels(TRUE_GYRO, dt, n)
+    true_accel = true_labels(TRUE_ACCEL, dt_s, n)
+    true_gyro = true_labels(TRUE_GYRO, dt_s, n)
 
     np.savez_compressed(
         RAW_PATH,
-        dt=dt,
-        t=t,
+        dt=dt_s,
+        t=t_s,
         accel=accel,
         gyro=gyro,
         seed=seed,
@@ -116,8 +116,8 @@ def generate(
     )
 
     return {
-        "dt": dt,
-        "t": t,
+        "dt": dt_s,
+        "t": t_s,
         "accel": accel,
         "gyro": gyro,
         "true_accel": TRUE_ACCEL,

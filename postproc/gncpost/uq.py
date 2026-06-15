@@ -471,8 +471,8 @@ def common_time_grid(
     last_times = [float(np.asarray(t, dtype=float)[-1]) for t in series_t if len(t) > 0]
     if not last_times:
         raise ValueError("common_time_grid: no non-empty series")
-    t_end = min(last_times)
-    return np.linspace(0.0, t_end, n_points)
+    t_end_s = min(last_times)
+    return np.linspace(0.0, t_end_s, n_points)
 
 
 def ensemble_band(

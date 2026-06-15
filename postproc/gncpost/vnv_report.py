@@ -121,14 +121,14 @@ def _uq_section() -> str:
     cases: list[tuple[np.ndarray, np.ndarray]] = []
     for _ in range(n_cases):
         # Each case: range closes from ~5 km to a small dispersed miss over a dispersed flight time.
-        t_end = 14.0 + rng.normal(0.0, 0.4)
-        t = np.linspace(0.0, max(t_end, 1.0), 280)
-        miss = abs(rng.normal(0.0, 1.5))  # terminal miss [m]
-        r0 = 5000.0
+        t_end_s = 14.0 + rng.normal(0.0, 0.4)
+        t_s = np.linspace(0.0, max(t_end_s, 1.0), 280)
+        miss_m = abs(rng.normal(0.0, 1.5))  # terminal miss [m]
+        r0_m = 5000.0
         # Smooth closure to the terminal miss, with mild per-case process noise.
-        rel = (r0 - miss) * (1.0 - t / t[-1]) + miss
-        rel = rel + rng.normal(0.0, 8.0, size=t.size) * (t / t[-1])
-        cases.append((t, np.abs(rel)))
+        rel_m = (r0_m - miss_m) * (1.0 - t_s / t_s[-1]) + miss_m
+        rel_m = rel_m + rng.normal(0.0, 8.0, size=t_s.size) * (t_s / t_s[-1])
+        cases.append((t_s, np.abs(rel_m)))
 
     band = uq.ensemble_band(cases, level=0.90, n_points=200)
     lines = [

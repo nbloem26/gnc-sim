@@ -64,9 +64,9 @@ def _intercept_flags(summary: pd.DataFrame) -> np.ndarray | None:
 
 def compute_stats(summary: pd.DataFrame, *, ci_level: float = 0.95) -> MonteCarloStats:
     """Compute CEP and dispersion metrics (with bootstrap CIs) from a summary DataFrame."""
-    miss = np.asarray(summary["miss_distance"], dtype=float)
-    miss = miss[np.isfinite(miss)]
-    if miss.size == 0:
+    miss_m = np.asarray(summary["miss_distance"], dtype=float)
+    miss_m = miss_m[np.isfinite(miss_m)]
+    if miss_m.size == 0:
         raise ValueError("no finite miss_distance values in summary")
 
     inter = _intercept_flags(summary)
@@ -74,20 +74,20 @@ def compute_stats(summary: pd.DataFrame, *, ci_level: float = 0.95) -> MonteCarl
 
     # Bootstrap CIs on the two headline metrics (seeded -> deterministic half-widths).
     cep_hw = float("nan")
-    if miss.size > 1:
-        cep_hw = bootstrap_ci(miss, cep_stat, level=ci_level, seed=CI_SEED).half_width
+    if miss_m.size > 1:
+        cep_hw = bootstrap_ci(miss_m, cep_stat, level=ci_level, seed=CI_SEED).half_width
     pkill_hw = float("nan")
     if inter is not None and inter.size > 1:
         pkill_hw = bootstrap_ci(inter, pkill_stat, level=ci_level, seed=CI_SEED).half_width
 
     return MonteCarloStats(
-        n=int(miss.size),
-        cep=float(np.median(miss)),
-        mean=float(np.mean(miss)),
-        std=float(np.std(miss, ddof=1)) if miss.size > 1 else 0.0,
-        p90=float(np.percentile(miss, 90)),
+        n=int(miss_m.size),
+        cep=float(np.median(miss_m)),
+        mean=float(np.mean(miss_m)),
+        std=float(np.std(miss_m, ddof=1)) if miss_m.size > 1 else 0.0,
+        p90=float(np.percentile(miss_m, 90)),
         intercept_rate=intercept_rate,
-        rms=float(np.sqrt(np.mean(miss**2))),
+        rms=float(np.sqrt(np.mean(miss_m**2))),
         cep_ci_halfwidth=cep_hw,
         pkill_ci_halfwidth=pkill_hw,
         ci_level=ci_level,
