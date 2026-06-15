@@ -9,5 +9,7 @@
 
 import { registerStudio } from '../registry';
 import { exampleStudio } from './exampleStudio';
+import { environmentStudio } from './environmentStudio';
 
 registerStudio(exampleStudio);
+registerStudio(environmentStudio);
