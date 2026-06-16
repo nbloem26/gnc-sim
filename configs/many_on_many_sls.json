@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "scenario": "many_on_many_sls",
+  "model": "3dof",
+  "seed": 45,
+  "dt": 0.005,
+  "t_end": 40.0,
+  "integrator": "rk4",
+  "origin": { "lat0_deg": 28.4889, "lon0_deg": -80.5778, "alt0_m": 0.0 },
+  "env": { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": true },
+  "aero": {
+    "ref_area": 0.02,
+    "cd0": 0.3,
+    "cd_mach": [[0.0,0.28],[0.7,0.30],[0.9,0.42],[1.0,0.58],[1.2,0.52],[1.5,0.43],[2.0,0.36],[3.0,0.30],[4.0,0.27]]
+  },
+  "vehicle": { "pos0": [0,0,0], "launch_speed": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 0, "mass0": 22.0 },
+  "guidance": { "law": "pronav", "nav_constant": 4.0, "max_accel": 400.0 },
+  "sensors": { "enable": false },
+  "target": { "pos0": [14000,0,5200], "vel0": [-300,0,-45], "maneuver": "constant" },
+  "many_on_many": {
+    "enabled": true,
+    "doctrine": "shoot_look_shoot",
+    "wta_method": "greedy",
+    "max_waves": 3,
+    "pk_sigma_m": 3.0,
+    "pk_max": 0.45,
+    "num_trials": 4000,
+    "interceptors": [
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 0 },
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 0 },
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 1 },
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 1 },
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 2 },
+      { "pos0_m": [0,0,0], "launch_speed_mps": 1100, "launch_elevation_deg": 42, "launch_azimuth_deg": 2 }
+    ],
+    "threats": [
+      { "pos0_m": [14000,0,5200],    "vel0_mps": [-300,0,-45],   "maneuver": "constant", "value": 1.0 },
+      { "pos0_m": [13500,500,5100],  "vel0_mps": [-290,-30,-42], "maneuver": "constant", "value": 1.0 }
+    ]
+  }
+}

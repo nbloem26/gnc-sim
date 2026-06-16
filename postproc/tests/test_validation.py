@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 
 from conftest import requires_cli
-
 from gncpost.validate import (
     check_atmosphere,
     check_ballistic,

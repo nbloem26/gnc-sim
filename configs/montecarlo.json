@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "scenario": "homing_mc",
   "model": "3dof",
   "seed": 12345,

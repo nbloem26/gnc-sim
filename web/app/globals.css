@@ -354,6 +354,13 @@ button.primary:hover:not(:disabled) {
   outline: none;
 }
 
+/* Merged Trajectory + Ground Track tab: stack the two panels with a gap. */
+.trajGroundStack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 /* Validation figures rendered inline inside a tab card: drop the route-level
    padding/centering, keep the responsive 2-up grid. */
 .valGridInline {
@@ -461,4 +468,379 @@ button.primary:hover:not(:disabled) {
 }
 .intro h1 {
   margin: 0 0 8px;
+}
+
+/* ---- Telemetry Explorer (issue #54) -------------------------------------- */
+.tx-root {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .tx-root {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Signal tree */
+.tx-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px;
+  max-height: 760px;
+}
+.tx-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.tx-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.tx-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.tx-tree-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+}
+.tx-group {
+  margin-bottom: 2px;
+}
+.tx-group-summary {
+  cursor: pointer;
+  padding: 4px 2px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--accent-2);
+  user-select: none;
+}
+.tx-group-summary:hover {
+  color: var(--accent);
+}
+.tx-sig-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 6px;
+}
+.tx-sig {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.tx-sig:hover {
+  background: #182230;
+  border-color: var(--border);
+}
+.tx-sig-on {
+  background: rgba(79, 209, 197, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Derived-signal box */
+.tx-derived {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.tx-derived-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tx-derived-row {
+  display: flex;
+  gap: 6px;
+}
+.tx-expr-err {
+  color: var(--err);
+  font-size: 11px;
+  margin: 4px 0 0;
+  font-family: ui-monospace, monospace;
+}
+
+/* Buttons */
+.tx-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tx-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tx-btn-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Panes */
+.tx-panes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.tx-panes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tx-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+.tx-pane-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tx-pane {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.tx-pane-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(79, 209, 197, 0.25);
+}
+.tx-pane-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.tx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 22px;
+  align-items: center;
+}
+.tx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 4px 2px 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  background: var(--bg);
+}
+.tx-chip-off {
+  opacity: 0.5;
+}
+.tx-chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid;
+  padding: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.tx-chip-label {
+  color: var(--text);
+}
+.tx-chip-val {
+  color: var(--warn);
+  font-weight: 600;
+}
+.tx-chip-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tx-chip-x:hover {
+  color: var(--err);
+}
+.tx-pane-remove {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.tx-pane-remove:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+.tx-pane-plot {
+  width: 100%;
+  height: 240px;
+}
+
+/* ---- Studios (reusable studio framework, issue #104) ---------------------- */
+.studioPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.studioPickerBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  padding: 8px 14px;
+  margin-bottom: -1px;
+}
+.studioPickerBtn:hover:not(.studioPickerActive) {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.studioPickerActive {
+  color: var(--accent);
+  background: var(--panel-2);
+  border-color: var(--border);
+  border-bottom: 1px solid var(--panel-2);
+}
+
+/* Two-column shell: param panel + plot grid. Collapses on narrow screens. */
+.studioShell {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .studioShell {
+    grid-template-columns: 1fr;
+  }
+}
+.studioPanel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  position: sticky;
+  top: 16px;
+}
+.studioPanelTitle {
+  font-size: 13px;
+  color: var(--accent-2);
+  margin: 0 0 12px;
+}
+.studioPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.studioPresetBtn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Numeric param: slider + number input on one row, with the live value. */
+.studioValue {
+  float: right;
+  color: var(--accent);
+  font-size: 12px;
+}
+.studioNumberRow {
+  display: grid;
+  grid-template-columns: 1fr 84px;
+  gap: 8px;
+  align-items: center;
+}
+.studioSlider {
+  width: 100%;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.studioNumberInput {
+  width: 100%;
+}
+.studioHelp {
+  display: block;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.studioMain {
+  min-width: 0;
+}
+.studioHeader {
+  margin-bottom: 14px;
+}
+.studioTitle {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+.studioComputing {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: normal;
+}
+.studioDesc {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Responsive plot grid: auto-fit columns, one column when narrow. */
+.studioGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+@media (max-width: 720px) {
+  .studioGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.studioPlotCard {
+  min-width: 0;
+}
+.studioPlotTitle {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 8px;
 }

@@ -5,14 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
 from gncpost.montecarlo import compute_stats
 
 
 def _summary(miss, intercept=None):
     n = len(miss)
-    data = {"case": range(n), "seed": range(n), "miss_distance": miss,
-            "intercept_time": [4.0] * n}
+    data = {"case": range(n), "seed": range(n), "miss_distance": miss, "intercept_time": [4.0] * n}
     if intercept is not None:
         data["intercept"] = intercept
     return pd.DataFrame(data)

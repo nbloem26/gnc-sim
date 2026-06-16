@@ -22,7 +22,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
 from gncpost import REPO_ROOT
 from gncpost.loaders import load_run, load_summary
 from gncpost.montecarlo import compute_stats, plot_cep
@@ -39,6 +38,11 @@ WEB_FIGURES = [
     "montecarlo_cep.png",
     "validation_summary.png",
     "trajectory_sample.png",
+    "fusion_track_error.png",
+    "uq_convergence.png",
+    "uq_sobol.png",
+    "phenomenology_roc.png",
+    "range_doppler_map.png",
 ]
 
 
@@ -59,7 +63,10 @@ def make_validation_summary() -> bool:
     for r in results:
         rows.append([r.name, "PASS" if r.passed else "FAIL", r.detail])
     table = ax.table(
-        cellText=rows[1:], colLabels=rows[0], loc="center", cellLoc="left",
+        cellText=rows[1:],
+        colLabels=rows[0],
+        loc="center",
+        cellLoc="left",
         colWidths=[0.18, 0.10, 0.72],
     )
     table.auto_set_font_size(False)
@@ -88,6 +95,36 @@ def make_montecarlo(batch_dir: Path) -> None:
     print("  MC:", stats.summary_line())
 
 
+def make_fusion() -> None:
+    from gncpost.fusion import plot_fusion, run_fusion
+
+    results = run_fusion()
+    fig = plot_fusion(results)
+    fig.savefig(POSTPROC_FIG / "fusion_track_error.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    for r in results:
+        print("  fusion:", r.summary_line())
+
+
+def make_phenomenology() -> None:
+    from gncpost.phenomenology import (
+        compute_roc,
+        plot_range_doppler,
+        plot_roc,
+        summarize_roc,
+    )
+
+    roc = compute_roc()
+    fig_roc = plot_roc(roc)
+    fig_roc.savefig(POSTPROC_FIG / "phenomenology_roc.png", dpi=130)
+    plt.close(fig_roc)
+    fig_rd = plot_range_doppler()
+    fig_rd.savefig(POSTPROC_FIG / "range_doppler_map.png", dpi=130)
+    plt.close(fig_rd)
+    for line in summarize_roc(roc):
+        print("  pheno:", line)
+
+
 def copy_to_web() -> None:
     WEB_FIG.mkdir(parents=True, exist_ok=True)
     for name in WEB_FIGURES:
@@ -104,6 +141,8 @@ def main() -> None:
     make_trajectory(REPO_ROOT / "runs" / "sample_run")
     make_validation_summary()
     make_montecarlo(REPO_ROOT / "runs" / "mc_batch")
+    make_fusion()
+    make_phenomenology()
 
     # Synthetic-IMU Allan figure (sensors/figures/allan_deviation.png).
     import allan_variance

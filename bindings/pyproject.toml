@@ -1,0 +1,27 @@
+# Minimal packaging for the gnc-sim Python SDK (issue #32).
+#
+# The compiled extension (_gncsim) is produced by the project's CMake build
+# (scripts/build-python.sh, -DGNCSIM_BUILD_PYTHON=ON) and dropped into gncsim/ next to __init__.py.
+# This file lets you `pip install --no-build-isolation -e bindings/` AFTER that build so `import
+# gncsim` resolves from any cwd / venv; for plain local use, scripts/build-python.sh already prints
+# the PYTHONPATH entry and the pytest in this dir adds it via conftest.py — no install required.
+#
+# This is intentionally NOT a from-scratch C++ build backend: the engine is built by CMake alongside
+# the CLI/tests/WASM so all surfaces share one toolchain and the bit-for-bit guarantee holds.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gncsim"
+version = "0.1.0"
+description = "Python SDK for the gnc-sim guided-interceptor core (pybind11; results as numpy)."
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[tool.setuptools]
+packages = ["gncsim"]
+
+[tool.setuptools.package-data]
+# Ship the CMake-built extension if it's present in the package dir at install time.
+gncsim = ["*.so", "*.pyd", "py.typed"]

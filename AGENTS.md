@@ -1,0 +1,223 @@
+# AGENTS.md — working in gnc-sim
+
+Authoritative guide for autonomous coding agents (and humans) working in this repo.
+`CLAUDE.md` is a symlink to this file. Keep this file current when conventions change.
+
+## What this project is
+
+A guided-interceptor **Guidance, Navigation & Control** simulation. A deterministic **pure C++17
+core** (`core/`) computes an engagement; the *same source* runs two ways:
+
+- **native** (`apps/cli/`) → CSV telemetry + JSON manifest, for offline runs / Monte Carlo / validation.
+- **WebAssembly** (`apps/wasm/`, Emscripten) → `run_sim(configJson) -> resultJson`, runs **client-side
+  in the browser** under the Next.js app in `web/` (deployed to Vercel).
+
+Python (`sensors/`, `postproc/`) drives offline rigor: sensor characterization (Allan variance),
+closed-form validation, Monte Carlo, and figures. MATLAB/Octave reference scripts live in `matlab/`.
+
+**The contract is sacred.** `docs/DATA_CONTRACT.md` defines the one JSON/CSV schema that C++, Python,
+the web app, and MATLAB all agree on. Change the schema → update the contract doc, all four surfaces,
+and re-baseline golden runs in the same change.
+
+## Golden rules (do not violate without explicit reason)
+
+1. **`core/` is pure.** No file I/O, no globals, no platform calls in the hot path — that purity is
+   what lets it compile to WASM. If you add I/O to `core/`, you break the browser build.
+2. **Determinism is a feature.** Seeded `std::mt19937_64` + fixed-step RK4. Native and WASM must stay
+   **bit-identical** for the same config+seed — `scripts/parity-check.mjs` asserts `|Δ| = 0` in CI.
+   Do not introduce nondeterminism (unordered iteration over hash maps, time-based seeds, FP reordering).
+3. **Miss distance is analytic CPA**, sub-`dt` accurate (`Runner.cpp`), independent of step size. Don't
+   "simplify" it to nearest-sample distance.
+4. **Monte Carlo IC dispersion lives in C++** (`core/src/scenario/MonteCarlo.cpp`), driven by the
+   `monte_carlo` sigma block in the config. The web panel is a *separate, simplified* reimplementation
+   — see Known issues. Prefer reusing the contract's sigmas over inventing new ones.
+
+## Repo map
+
+| Path | What |
+|---|---|
+| `core/include/gncsim/`, `core/src/` | Pure C++17 library: `math · core(data contract) · env · aero · dynamics · sensors · gnc · scenario(Runner)`. |
+| `core/src/scenario/Runner.cpp` | **The per-step GNC loop** and the three scenario runners (homing, ballistic round, cued engagement). Terminal conditions live here. |
+| `core/src/scenario/MonteCarlo.cpp` | Disperses initial conditions per `monte_carlo` sigmas; runs N reproducible cases. |
+| `apps/cli/` | Native entry → CSV + manifest. |
+| `apps/wasm/` | Emscripten entry: `run_sim(json) -> json`. |
+| `tests/` | C++ GoogleTest suites (one per module + integration/determinism), run via CTest. |
+| `sensors/` | Python: synthetic IMU → Allan variance → `configs/sensor_params.json`. |
+| `postproc/gncpost/` | Python: validation vs closed-form, Monte Carlo, figures; `golden.py` regression harness. |
+| `postproc/tests/` | Python pytest suite (loaders, USSA76/ballistic/terminal-velocity math, Allan slope, loop closure). |
+| `web/` | Next.js + React. `app/page.tsx` (tabs), `components/` (per-subsystem panels), `lib/wasmRunner.ts`. |
+| `configs/` | 18 scenario presets (the data contract in practice). Start here to understand inputs. |
+| `matlab/` | Reference analysis scripts (Octave fallback). Not CI-executed. |
+| `docs/` | `DATA_CONTRACT.md` (schema), `ARCHITECTURE.md` (one core/two targets + the loop), `THEORY.md` (the math behind every shipped model + worked CLI/SDK example), `ROADMAP.md`, `GOLDEN_RUNS.md`, `MODELS.md` (per-model docs), `VNV_MATRIX.md` (model→evidence), `Doxyfile` (C++ API reference — `doxygen docs/Doxyfile`). |
+| `bindings/` | Python SDK (pybind11): `gncsim.run` / `gncsim.monte_carlo` → numpy. `bindings/README.md` is the API reference; built by `scripts/build-python.sh`. |
+| `fmi/` | FMI 2.0 Co-Simulation **FMU export** (issue #44): wraps the pure core as a standards `.fmu` for Simulink/MATLAB-centric masters. Opt-in (`-DGNCSIM_BUILD_FMI=ON`); vendored FMI headers, in-repo master + bit-match test. `docs/FMI.md` is the reference. |
+| `core/{include,src}/gncsim/interop/` | **Opt-in** distributed-simulation federation (issue #47): message bus + DIS (IEEE-1278) PDUs + deterministic record/replay. NOT in the pure hot path (`runSimulation` never touches it); see `docs/DISTRIBUTED.md`. DIS works; HLA/DDS are interface + docs. |
+| `scripts/` | `build-native.sh`, `build-wasm.sh`, `build-python.sh`, `parity-check.mjs`, `determinism-guard.mjs` (fast-tier parity guard, see *Tiered model fidelity*). |
+
+## Build / test / run — exact commands
+
+**Native (build + C++ tests):**
+```bash
+./scripts/build-native.sh                 # cmake Release + ctest
+./build-native/apps/cli/gncsim --config configs/homing_3dof.json --out runs/run_001
+```
+
+**WASM (requires emsdk on PATH — devcontainer/Dockerfile provide it):**
+```bash
+source /opt/emsdk/emsdk_env.sh
+./scripts/build-wasm.sh                    # emits web/public/wasm/gncsim.{js,wasm}
+```
+
+**Web:**
+```bash
+cd web && npm install && npm run dev       # http://localhost:3000
+npm run lint                               # next lint (+ tsc via build)
+npm run build                              # static export; must pass before deploy
+```
+Without a built WASM artifact the web app runs in **MOCK mode** (serves the committed
+`web/public/sample_result.json`); every seed returns the same sample, so live Monte Carlo is disabled.
+Build WASM first for real client-side runs.
+
+**Python rigor:**
+```bash
+pip install -r postproc/requirements.txt
+python sensors/generate_imu_data.py && python sensors/fit_noise_params.py   # writes configs/sensor_params.json
+python -m pytest postproc/tests -q
+python -m postproc.gncpost.golden                 # golden-run regression (8 configs); --update to re-baseline
+```
+
+**Parity (native must equal WASM):**
+```bash
+node scripts/parity-check.mjs
+```
+
+## Linting / formatting (CI gates — run before pushing)
+
+- **Python**: `ruff check .` · `ruff format --check .` · `mypy` (config in `pyproject.toml`).
+- **C++**: `clang-format` (`.clang-format`); CI fails on diff.
+- **Web**: `cd web && npm run lint` + `tsc`.
+- **CI** (`.github/workflows/ci.yml`): lint/type-check → native build+CTest → Python rigor → WASM build
+  → native↔WASM parity → web build. `golden.yml` runs the golden harness separately. Keep `ci.yml`
+  untouched when adding unrelated workflows.
+
+## Per-step pipeline (so you know where to make changes)
+
+`core/src/scenario/Runner.cpp`, each fixed `dt`: **Environment** (gravity + USSA76) → **Aero**
+(Mach-dependent drag; 6DOF normal force) → **Sensors** (seeker LOS + IMU with characterized noise,
+when enabled) → **Navigation** (tracker → relative-state estimate) → **Guidance** (ProNav
+`a_cmd = N·V_c·(Ω×û_LOS)`, magnitude-limited) → **Control** (3DOF direct; 6DOF autopilot→moment→attitude)
+→ **Dynamics** (RK4). See `docs/ARCHITECTURE.md`.
+
+### Terminal conditions (see issue #26)
+A run ends on the **first** of: (1) **time** — `steps = t_end/dt`; (2) **ground impact** — interceptor
+returns below the WGS-84 ellipsoid (`alt < 0`). Intercept is **not** an early-stop: the miss is the
+continuous CPA tracked across the whole flight, `intercept = best_range < kLethalRadius (3 m)`. The
+target is ballistic and not independently terminated.
+
+## Model credibility — per-model docs + V&V matrix (see issue #34)
+
+Every shipped model (the keys resolved by `core/src/model/Registry.cpp`) is documented and has
+traceable evidence:
+
+- [`docs/MODELS.md`](docs/MODELS.md) — one section per model: assumptions, governing equations,
+  validity limits, references.
+- [`docs/VNV_MATRIX.md`](docs/VNV_MATRIX.md) — the **V&V matrix**: each model/claim → its evidence
+  (the `tests/*_test.cpp` GoogleTest benchmark, the `postproc/golden/golden.json` regression entry,
+  and/or the analytic check in `postproc/gncpost/`).
+- The matrix is **machine-checked** as a regression leg: `postproc/gncpost/vnv.py` parses it, the
+  shipped model set, and the golden baseline; `postproc/tests/test_vnv_matrix.py` asserts every
+  shipped model has ≥1 row and every referenced golden key / benchmark file exists. Run it with
+  `python -m gncpost.vnv` or via `python -m pytest postproc/tests/test_vnv_matrix.py`.
+
+New-model PRs **must add a V&V-matrix row** (and a `docs/MODELS.md` page) — see the PR-workflow
+note below.
+
+## Tiered model fidelity + determinism guard (see issue #50)
+
+Every registry model is classified **fast** (WASM-safe, interactive) or **hi-fi** (high-fidelity
+native) in the authoritative manifest [`configs/tiers.json`](configs/tiers.json):
+
+- **fast tier = parity-guaranteed.** `scripts/determinism-guard.mjs` runs *every* `fast_tier_configs`
+  entry through the native↔WASM comparison (`|Δ| = 0` within parity tolerance) and asserts every
+  fast-tier model is exercised by at least one of those configs — so **parity coverage tracks the
+  fast-tier model set**. It is wired into CI as a step of the `wasm-web` job.
+- **hi-fi tier = golden-checked.** The `hifi_configs` (e.g. `6dof_hifi`, EGM/extended-atmosphere
+  round Earth, radar/IR phenomenology) are baselined in `postproc/gncpost/golden.py`.
+- `postproc/tests/test_tiers.py` cross-checks the manifest against the shipped model set in
+  `pytest` (no WASM build needed): a shipped model with no tier, a fast model with no parity config,
+  or a hi-fi config that isn't a golden case **fails CI**.
+
+The formalized fast/hi-fi pairs (`6dof`↔`6dof_hifi`, `ekf`↔`imm`, `radar`↔`radar_pheno`,
+`round`↔`round`+EGM) and the full guarantee table live in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §*Tiered model fidelity*.
+
+## Naming conventions — units in variable names (see issue #69)
+
+**Physical-quantity variables MUST carry an explicit SI unit suffix.** Units belong in the name, not
+just a comment, so every use site is unambiguous. Applies to **all new and changed code** (C++, Python,
+TS).
+
+| Quantity | Suffix | Example |
+|---|---|---|
+| length / position | `_m` | `range_m`, `alt_m` |
+| time | `_s` | `t_end_s`, `dt_s` |
+| speed | `_mps` | `launch_speed_mps`, `v_closing_mps` |
+| acceleration | `_mps2` | `accel_cmd_mps2` |
+| mass | `_kg` | `mass_kg` |
+| angle | `_rad` / `_deg` | `elevation_deg`, `aoa_rad` |
+| angular rate | `_radps` | `los_rate_radps`, `body_rate_radps` |
+| force | `_n` | `thrust_n` |
+| frequency | `_hz` | `maneuver_freq_hz` |
+| dimensionless | (none) | `nav_constant`, `mach` |
+
+Use one token per unit (`_radps`, `_mps2`), not `_rad_s`. Dimensionless quantities take no suffix.
+
+**Data-contract keys are special.** Config JSON keys and telemetry channel names in `SimResult.series`
+/ CSV headers are the cross-language schema (see `docs/DATA_CONTRACT.md`). Renaming **those** to add
+units is a **breaking change** — it needs a `schema_version` bump, all four surfaces updated together,
+regenerated samples, and a golden re-baseline. So: apply the convention freely to **internal** variable
+names; touch **contract keys** only via a deliberate, schema-versioned migration. Migration is phased
+under #69 (Phase 1 = this rule; Phase 2 = internal sweep; Phase 3 = optional contract-key rename).
+
+## Contribution / PR workflow
+
+- **Branch naming:** `feature/<issue#>-<slug>` (e.g. `feature/5-multitracker`). One issue per branch.
+- **Commits/PRs:** Conventional-commit titles (`feat(scope): …`, `fix(scope): …`). End commit messages
+  and PR bodies with the `Co-Authored-By:` / generated-by trailers already used in history.
+- **Closing issues — IMPORTANT (see issue #28):** GitHub only auto-closes a linked issue when the PR
+  merges into the **default branch (`main`)**. If you **stack** PRs (base = another feature branch),
+  the `Closes #N` keyword **will not fire** even after the work reaches `main`. Either:
+  - put `Closes #N` on the PR that merges **into `main`**, or
+  - merge each feature PR directly to `main` (rebase, don't stack), or
+  - close the linked issues **manually** after merging a stack.
+  This is exactly why issues #2–#8 stayed open despite merged PRs.
+- **When you change the schema:** update `docs/DATA_CONTRACT.md` + every surface (C++ serializers,
+  Python loaders, `web/lib/types.ts`, MATLAB `load_run.m`) and re-run `golden.py --update`.
+- **When you add a model** (a new key in any `core/src/model/Registry.cpp` resolver — guidance law,
+  nav filter, dynamics/sensor/env/threat type): you **must** also (1) add its page to
+  [`docs/MODELS.md`](docs/MODELS.md) and (2) add a row to the
+  [V&V matrix](docs/VNV_MATRIX.md) linking the model's claim to its evidence (a `tests/*_test.cpp`
+  benchmark, ideally a `golden.json` entry, and/or an analytic check in `postproc/`). The pytest
+  `postproc/tests/test_vnv_matrix.py` (`python -m gncpost.vnv`) cross-checks the matrix against the
+  shipped model set and **fails CI** if a shipped model has no row, or a row names a missing golden
+  key / benchmark file. See *Model credibility* below. (This is the expectation referenced
+  elsewhere as "once #34 exists".) You **must** also (3) **classify the model in
+  [`configs/tiers.json`](configs/tiers.json)** — fast (add/extend a `fast_tier_configs` entry + its
+  `config_models` list so the determinism guard parity-covers it) or hi-fi (add it to `golden.py`
+  `CANONICAL`, re-baseline). `postproc/tests/test_tiers.py` and `scripts/determinism-guard.mjs`
+  **fail CI** otherwise. See *Tiered model fidelity* above.
+
+## Known issues / gotchas (open tickets)
+
+- **#23** — Web Monte Carlo varies *only the seed*; with sensors off it yields N identical runs. The
+  fix is to mirror `core/.../MonteCarlo.cpp` IC dispersion in `web/components/MonteCarloPanel.tsx`.
+- **#24** — Web has no scenario selector; `ParamForm.tsx` hardcodes `scenario: 'homing'`. The
+  `configs/*.json` presets aren't exposed to the web build.
+- **#25** — Trajectory and Ground Track are separate tabs; should be merged. Keep the Leaflet map's
+  lazy `dynamic(ssr:false)` mount when combining.
+- **#26** — Terminal conditions are correct but undocumented; possible opt-in post-CPA early-out.
+- **#27** — Cesium 3D globe display (large feature; mind bundle size + ion token).
+- **#28** — PR auto-close workflow (the stacking issue above).
+
+Web-specific: panels mount **lazily per active tab** (see `web/app/page.tsx`) to avoid a Canvas2D
+readback storm — don't eagerly instantiate every Plotly/Leaflet chart on load.

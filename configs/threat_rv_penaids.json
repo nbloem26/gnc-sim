@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scenario": "homing",
+  "model": "3dof",
+  "seed": 1,
+  "dt": 0.01,
+  "t_end": 40.0,
+  "integrator": "rk4",
+  "origin": { "lat0_deg": 28.4889, "lon0_deg": -80.5778, "alt0_m": 0.0 },
+  "env": { "g0": 9.80665, "altitude_dependent_g": false, "atmosphere": false },
+  "aero": { "ref_area": 0.02, "cd0": 0.3 },
+  "vehicle": { "pos0": [0,0,0], "launch_speed": 2000, "launch_elevation_deg": 72, "launch_azimuth_deg": 0, "mass0": 60.0 },
+  "guidance": { "law": "pronav", "nav_constant": 4.0, "max_accel": 1500.0 },
+  "sensors": { "enable": false },
+  "target": {
+    "pos0": [55000, 0, 60000],
+    "vel0": [-1500, 0, -1200],
+    "maneuver": "rv_penaids",
+    "rv": {
+      "penaid_count": 6,
+      "deploy_time_s": 2.0,
+      "deploy_dv_mps": 8.0,
+      "penaid_decel_mps2": 1.0
+    }
+  }
+}

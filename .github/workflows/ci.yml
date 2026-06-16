@@ -1,16 +1,51 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:   # moved to self-hosted.yml; kept dispatch-only to avoid paid GitHub-hosted minutes
 
 jobs:
+  lint:
+    name: Lint + type-check (C++ / Python / web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '20' }
+
+      # --- Python: ruff (lint + format) and mypy (types) ---
+      - name: Install Python linters
+        run: pip install ruff==0.15.17 mypy==2.1.0 numpy scipy pandas
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Mypy type-check
+        run: mypy
+
+      # --- C++: clang-format (pinned to match the version contributors run) ---
+      - name: Install clang-format
+        run: pip install clang-format==22.1.5
+      - name: Clang-format check
+        run: |
+          mapfile -t files < <(find core apps bindings \
+            \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/build*/*')
+          clang-format --dry-run --Werror "${files[@]}"
+
+      # --- Web: ESLint + TypeScript ---
+      - name: Web lint + type-check
+        run: |
+          cd web
+          npm ci
+          npm run lint
+          npx tsc --noEmit
+
   native:
     name: Native build + C++ tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install toolchain
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
       - name: Build + test (CTest)
@@ -19,7 +54,7 @@ jobs:
           cmake --build build-native -j"$(nproc)"
           ctest --test-dir build-native --output-on-failure
       - name: Upload native CLI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gncsim-native
           path: build-native/apps/cli/gncsim
@@ -29,12 +64,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: native
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: { python-version: '3.11' }
       - name: Install deps
         run: pip install -r postproc/requirements.txt
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with: { name: gncsim-native, path: build-native/apps/cli }
       - run: chmod +x build-native/apps/cli/gncsim
       - name: Sensor characterization (writes configs/sensor_params.json)
@@ -42,29 +77,303 @@ jobs:
       - name: Post-processing + validation tests
         run: python -m pytest postproc/tests -q
 
+  python-sdk:
+    name: Python SDK (pybind11) build + import + bit-for-bit test
+    runs-on: ubuntu-latest
+    needs: native
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Install Python deps (pybind11 + numpy + pytest)
+        run: pip install pybind11 numpy pytest
+      # Build the bindings behind the opt-in flag; the compiled _gncsim lands in bindings/gncsim/.
+      - name: Build Python bindings
+        run: ./scripts/build-python.sh
+      - name: Import the module
+        run: |
+          export PYTHONPATH="$PWD/bindings:${PYTHONPATH:-}"
+          python -c "import gncsim; r = gncsim.run({'scenario': 'homing'}); print(sorted(r.keys())); print('series channels:', len(r['series']))"
+      # Reuse the CLI built by the `native` job to assert run(cfg) matches it bit-for-bit.
+      - uses: actions/download-artifact@v5
+        with: { name: gncsim-native, path: build-native/apps/cli }
+      - run: chmod +x build-native/apps/cli/gncsim
+      - name: SDK tests (bit-for-bit vs CLI)
+        run: GNCSIM_CLI="$PWD/build-native/apps/cli/gncsim" python -m pytest bindings/test_sdk.py -q
+
   wasm-web:
     name: WASM build + native↔WASM parity + web build
     runs-on: ubuntu-latest
     needs: native
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install toolchain
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential
       - uses: mymindstorm/setup-emsdk@v14
         with: { version: '3.1.61' }
       - name: Build WASM
         run: ./scripts/build-wasm.sh
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with: { name: gncsim-native, path: build-native/apps/cli }
       - run: chmod +x build-native/apps/cli/gncsim
       - name: Native ↔ WASM parity check
         run: node scripts/parity-check.mjs configs/homing_3dof.json
-      - uses: actions/setup-node@v4
+      # Determinism guard (issue #50): run EVERY fast-tier config (configs/tiers.json) through the
+      # native<->WASM comparison and assert |Δ| within parity tolerance, AND assert every fast-tier
+      # model is exercised by a parity-checked config (so parity coverage tracks the fast-tier set).
+      # Fails if a fast-tier model is added without a parity config, or a fast-tier config diverges.
+      - name: Determinism guard (fast-tier parity coverage)
+        run: node scripts/determinism-guard.mjs
+      - uses: actions/setup-node@v5
         with: { node-version: '20' }
       - name: Build web app
         run: cd web && npm ci && npm run build
       - name: Upload web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: web-out
           path: web/out
+
+  # --- Per-step cost budget (issue #53). ADDITIVE: a Release build of the perf benchmark
+  # (apps/bench) measures ns/step for the named scenarios and FAILS if any exceeds the committed
+  # budget (configs/perf_budget.json) plus its generous headroom. The headroom absorbs CI-runner
+  # variance, so the gate catches genuine regressions (e.g. losing the frames.reserve() that took
+  # homing_3dof from ~290 to ~94 ns/step), not jitter. Touches no other job. ---
+  perf-budget:
+    name: Per-step cost budget (ns/step regression gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build benchmark (Release)
+        run: |
+          cmake -S . -B build-perf -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-perf -j"$(nproc)" --target gncsim-bench
+      - name: Check per-step cost against budget
+        run: |
+          set -e
+          for label in homing_3dof homing_6dof_hifi ballistic_round; do
+            ./build-perf/apps/bench/gncsim-bench \
+              --config "configs/${label}.json" \
+              --budget configs/perf_budget.json \
+              --label "${label}" \
+              --iters 300 --warmup 30
+          done
+
+  # --- Test-depth jobs (issue #51). All ADDITIVE: each builds the tests in a separate build dir
+  # behind an opt-in CMake flag, so the default `native` job above is untouched. ---
+
+  sanitizers:
+    name: Sanitizers (ASan + UBSan CTest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build tests with ASan + UBSan
+        run: |
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DGNCSIM_SANITIZE=address,undefined
+          cmake --build build-asan -j"$(nproc)"
+      - name: Run CTest under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-asan --output-on-failure
+
+  fmi-cosim:
+    name: FMI 2.0 co-sim FMU (build + package + master bit-match)
+    runs-on: ubuntu-latest
+    # ADDITIVE (issue #44): builds behind -DGNCSIM_BUILD_FMI=ON in a separate build dir, so the
+    # default `native` job is untouched. Builds the co-sim slave + the modelDescription.xml
+    # generator, packages the .fmu, validates the descriptor is well-formed XML, and runs the
+    # in-repo master test that dlopen()s the slave and asserts its streamed outputs bit-match
+    # runSimulation(). The master test is also wired into this build's CTest.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential clang-tidy zip unzip
+      - name: Build with FMI co-simulation export
+        run: |
+          cmake -S . -B build-fmi -DCMAKE_BUILD_TYPE=Release -DGNCSIM_BUILD_FMI=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build-fmi -j"$(nproc)"
+      - name: clang-tidy the FMI sources (warnings-as-errors)
+        run: |
+          clang-tidy -p build-fmi --warnings-as-errors='*' \
+            fmi/src/GncsimFmu.cpp fmi/src/GenerateModelDescription.cpp fmi/master/FmiMaster.cpp
+      - name: Validate modelDescription.xml is well-formed
+        run: python -c "import xml.dom.minidom as m; m.parse('build-fmi/fmi/modelDescription.xml'); print('modelDescription.xml OK')"
+      - name: Package the .fmu
+        run: ./fmi/scripts/package_fmu.sh build-fmi build-fmi/gncsim.fmu
+      - name: FMU master test (bit-match vs runSimulation)
+        run: ctest --test-dir build-fmi -R fmi_master_test --output-on-failure
+      - name: Master test against the PACKAGED .fmu binary
+        run: |
+          mkdir -p fmu-extract
+          (cd fmu-extract && unzip -q ../build-fmi/gncsim.fmu)
+          ./build-fmi/fmi/fmi_master fmu-extract/binaries/linux64/gncsim.so
+      - name: Upload FMU artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: gncsim-fmu
+          path: build-fmi/gncsim.fmu
+
+  clang-tidy:
+    name: clang-tidy (core + apps/cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential clang-tidy
+      - name: Generate compile_commands.json
+        run: cmake -S . -B build-tidy -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Run clang-tidy
+        run: |
+          # Lint the natively-compiled translation units only (apps/wasm needs Emscripten headers).
+          mapfile -t files < <(find core apps/cli -name '*.cpp' -not -path '*/build*/*' | sort)
+          echo "Linting ${#files[@]} files"
+          clang-tidy -p build-tidy --warnings-as-errors='*' "${files[@]}"
+
+  coverage:
+    name: Coverage (gcov / gcovr summary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install toolchain
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+          pip install gcovr==7.2
+      - name: Build instrumented tests
+        run: |
+          cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DGNCSIM_COVERAGE=ON
+          cmake --build build-cov -j"$(nproc)"
+      - name: Run tests
+        run: ctest --test-dir build-cov --output-on-failure
+      - name: Coverage summary (core/)
+        run: |
+          gcovr --root . --filter 'core/' --print-summary \
+            --xml-pretty -o coverage.xml build-cov
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  build-matrix:
+    name: Build matrix (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc, cxx: g++, apt: build-essential }
+          - { cc: clang, cxx: clang++, apt: clang }
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build ${{ matrix.apt }}
+      - name: Build + test with ${{ matrix.cc }}
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -S . -B build-${{ matrix.cc }} -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-${{ matrix.cc }} -j"$(nproc)"
+          ctest --test-dir build-${{ matrix.cc }} --output-on-failure
+
+  fuzz:
+    name: Config fuzzer (libFuzzer, smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Clang toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang
+      - name: Build libFuzzer harness
+        env: { CC: clang, CXX: clang++ }
+        run: |
+          cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=Debug -DGNCSIM_FUZZ=ON \
+            -DGNCSIM_BUILD_TESTS=OFF -DGNCSIM_BUILD_CLI=OFF
+          cmake --build build-fuzz -j"$(nproc)" --target config_fuzzer
+      - name: Fuzz briefly over the seed corpus
+        run: |
+          # Short, time-boxed run: replay the corpus + mutate for 60s. A crash artifact fails the job.
+          ./build-fuzz/fuzz/config_fuzzer -max_total_time=60 -timeout=10 fuzz/corpus
+
+  vnv-report:
+    name: V&V credibility report (NASA-STD-7009)
+    runs-on: ubuntu-latest
+    # ADDITIVE (issue #49): pure-Python — no native build. Scores every shipped model on
+    # the NASA-STD-7009 credibility factors and emits the V&V report as a build artifact
+    # to attach per release. Deterministic (seeded); the report tests run here too.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.11' }
+      - name: Install Python deps
+        run: pip install numpy scipy pandas pytest
+      - name: Credibility + report tests
+        run: python -m pytest postproc/tests/test_credibility.py -q
+      - name: V&V-matrix consistency
+        run: cd postproc && python -m gncpost.vnv
+      - name: Generate V&V / credibility report
+        run: cd postproc && python -m gncpost.vnv_report --out "$GITHUB_WORKSPACE/VNV_REPORT.md"
+      - name: Upload V&V report
+        uses: actions/upload-artifact@v5
+        with:
+          name: vnv-report
+          path: VNV_REPORT.md
+  # --- Docs (issue #52). ADDITIVE: builds the C++ API reference from the Doxygen comments on the
+  # public headers and fails on malformed doc syntax. Touches no build/test output. ---
+  docs:
+    name: API docs (Doxygen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y doxygen
+      - name: Build C++ API docs (fail on doc-comment errors)
+        # WARN_AS_ERROR=FAIL_ON_WARNINGS turns malformed Doxygen comments into a failing build;
+        # the Doxyfile itself keeps it off so a local `doxygen docs/Doxyfile` still emits output.
+        run: |
+          cp docs/Doxyfile docs/Doxyfile.ci
+          echo 'WARN_AS_ERROR=FAIL_ON_WARNINGS' >> docs/Doxyfile.ci
+          doxygen docs/Doxyfile.ci
+      - name: Upload API docs
+        uses: actions/upload-artifact@v5
+        with:
+          name: api-docs-html
+          path: docs/api/html
+
+  # --- Distributed federation (issue #47). ADDITIVE: builds with the real-UDP DIS transport path
+  # enabled (GNCSIM_INTEROP_UDP) and runs the hermetic distributed test, so the socket-bearing
+  # compile path is covered without ever binding a port in CI. The default native/sanitizer jobs
+  # already run the same test through the GLOB'd CTest with the UDP leg OFF. ---
+  distributed:
+    name: Distributed federation (DIS + UDP build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential
+      - name: Build with the UDP DIS transport enabled + run the distributed test
+        run: |
+          cmake -S . -B build-interop -DCMAKE_BUILD_TYPE=Release -DGNCSIM_INTEROP_UDP=ON
+          cmake --build build-interop -j"$(nproc)"
+          ctest --test-dir build-interop -R distributed --output-on-failure
+      - name: Record + replay a federated run via the CLI (byte-identical check)
+        run: |
+          ./build-interop/apps/cli/gncsim --config configs/homing_3dof.json \
+            --out /tmp/fed_a --federation-record /tmp/a.gncr
+          ./build-interop/apps/cli/gncsim --config configs/homing_3dof.json \
+            --out /tmp/fed_b --federation-record /tmp/b.gncr
+          cmp /tmp/a.gncr /tmp/b.gncr && echo "federation recordings are byte-identical"

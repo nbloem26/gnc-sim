@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from gncpost.atmosphere import REFERENCE_TABLE, terminal_velocity, ussa76
 
 
@@ -28,7 +27,7 @@ def test_reference_table(alt):
 
 def test_density_monotonic_decrease():
     densities = [ussa76(z).density for z in range(0, 80000, 2000)]
-    assert all(b < a for a, b in zip(densities, densities[1:]))
+    assert all(b < a for a, b in zip(densities, densities[1:], strict=False))
 
 
 def test_terminal_velocity_formula():

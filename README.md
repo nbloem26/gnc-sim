@@ -12,6 +12,8 @@ the offline validation and Monte Carlo rigor.
 **CEP 0.56 m** · native↔WASM **bit-identical** (parity |Δ| = 0).
 
 ### Engineering write-ups
+- [AGENTS.md](AGENTS.md) — orientation for contributors and autonomous coding agents: golden rules,
+  repo map, exact build/test commands, the PR/issue-closing workflow. (`CLAUDE.md` symlinks here.)
 - [docs/ANSWERS.md](docs/ANSWERS.md) — the C++/Linux + Python validation story and the
   measured-data → realistic-sim-inputs fidelity story, with results.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — one core, two targets; the per-step GNC loop.

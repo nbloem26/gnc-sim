@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from allan_variance import overlapping_allan_deviation
 from characterize import characterize_axes
 from noise_model import AxisNoise, generate_axis, gm_allan_deviation

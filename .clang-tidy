@@ -1,0 +1,45 @@
+# gnc-sim — clang-tidy configuration (issue #51).
+#
+# A sane, signal-over-noise check set for a numeric C++17 codebase. We enable the bug-finding
+# families (bugprone, clang-analyzer, performance, portability) plus a curated slice of the
+# readability / modernize / cppcoreguidelines checks, then switch off the ones that fight this
+# codebase's deliberate style (physics math with magic constants, public structs as plain data,
+# Google-style braces) to keep the report actionable. Real hits are fixed in-source or annotated
+# with a justified NOLINT; this config is intentionally NOT a rubber stamp.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*,
+  portability-*,
+  misc-*,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-using,
+  modernize-loop-convert,
+  modernize-use-emplace,
+  readability-redundant-control-flow,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  -misc-include-cleaner,
+  -misc-const-correctness,
+  -misc-use-anonymous-namespace,
+  -readability-magic-numbers,
+  -readability-braces-around-statements,
+  -readability-identifier-length,
+  -portability-avoid-pragma-once,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-type-member-init,
+  -performance-enum-size,
+  -performance-avoid-endl,
+  -performance-inefficient-string-concatenation
+
+# Treat nothing as an automatic error here; CI decides what is a gate. This keeps local runs
+# informative without failing on advisory checks.
+WarningsAsErrors: ''
+HeaderFilterRegex: 'gncsim/.*'
+FormatStyle: file

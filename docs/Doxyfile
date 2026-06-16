@@ -1,0 +1,70 @@
+# Doxygen configuration for the gnc-sim C++ public API (core/include/gncsim).
+#
+# Generates HTML reference docs from the Doxygen-style comments on the public headers. Run from
+# the repo root:
+#
+#     doxygen docs/Doxyfile
+#
+# Output lands in docs/api/html/index.html. The CI "docs" job (.github/workflows/ci.yml) runs
+# this with WARN_AS_ERROR so malformed doc comments fail the build.
+#
+# Scope is the PUBLIC headers only (core/include/gncsim) — the .cpp implementations are internal.
+# This is additive documentation: it changes no code behavior.
+
+PROJECT_NAME           = "gnc-sim"
+PROJECT_BRIEF          = "Guided-interceptor GNC simulation — C++ core public API"
+OUTPUT_DIRECTORY       = docs/api
+CREATE_SUBDIRS         = NO
+
+# --- Input ---
+# Public C++ headers only. The theory manual (docs/THEORY.md) is a standalone Markdown doc with
+# block LaTeX that GitHub renders directly; it is linked from the header comments rather than fed
+# through Doxygen, so the API build stays clean.
+INPUT                  = core/include/gncsim
+FILE_PATTERNS          = *.hpp *.h
+RECURSIVE              = YES
+
+# --- What to extract ---
+# EXTRACT_ALL keeps undocumented members from being flagged (we document the principal public
+# API; private members and trivial accessors need not each carry a comment). Combined with
+# WARN_IF_UNDOCUMENTED = NO this means the build is clean on the documented surface while still
+# failing (below) on malformed doc *syntax*.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+# --- C++ parsing ---
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+BUILTIN_STL_SUPPORT    = YES
+MARKDOWN_SUPPORT       = YES
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+
+# --- Math (the THEORY equations and the @f$..@f$ in headers) ---
+USE_MATHJAX            = YES
+
+# --- Output formats ---
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HTML_OUTPUT            = html
+
+# --- Diagrams: no Graphviz dependency in CI ---
+HAVE_DOT               = NO
+
+# --- Warnings ---
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+# Don't fail on functions that document some but not all @param/@return (partial coverage is
+# fine — FAIL_ON_WARNINGS still catches genuinely malformed/unknown doc commands). See issue #52.
+WARN_IF_INCOMPLETE_DOC = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+# CI sets WARN_AS_ERROR on the command line (`-D WARN_AS_ERROR=FAIL_ON_WARNINGS`); kept off here
+# so a local `doxygen docs/Doxyfile` still produces output for inspection.
+WARN_AS_ERROR          = NO

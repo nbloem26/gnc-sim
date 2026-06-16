@@ -38,7 +38,7 @@ def overlapping_allan_deviation(
     dt: float,
     num_points: int = 60,
     min_clusters: int = 12,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute the overlapping Allan deviation sigma(tau).
 
     Args:
@@ -68,9 +68,7 @@ def overlapping_allan_deviation(
     max_m = max(1, n // max(1, min_clusters))
     if max_m < 1:
         raise ValueError("series too short for any averaging factor")
-    m_values = np.unique(
-        np.floor(np.logspace(0, np.log10(max_m), num_points)).astype(int)
-    )
+    m_values = np.unique(np.floor(np.logspace(0, np.log10(max_m), num_points)).astype(int))
     m_values = m_values[m_values >= 1]
 
     taus = m_values * dt
@@ -81,7 +79,7 @@ def overlapping_allan_deviation(
         # Overlapping estimator (Riley, NIST SP 1065, eq. for AVAR from phase data):
         #   sigma^2 = 1 / (2 tau^2 (N - 2m)) * sum_{i=0}^{N-2m-1}
         #             (theta[i+2m] - 2 theta[i+m] + theta[i])^2
-        diffs = theta[2 * m :] - 2.0 * theta[m : -m] + theta[: -2 * m]
+        diffs = theta[2 * m :] - 2.0 * theta[m:-m] + theta[: -2 * m]
         denom = 2.0 * tau * tau * diffs.size
         avar = np.sum(diffs * diffs) / denom
         adev[k] = np.sqrt(avar)
@@ -122,8 +120,11 @@ def _combined_avar(tau: np.ndarray, white: float, sigma_gm: float, tcorr: float,
     ``noise_model.gm_allan_variance``).
     """
     r = tcorr / tau
-    gm = 2.0 * sigma_gm**2 * r * (
-        1.0 - (r / 2.0) * (3.0 - 4.0 * np.exp(-1.0 / r) + np.exp(-2.0 / r))
+    gm = (
+        2.0
+        * sigma_gm**2
+        * r
+        * (1.0 - (r / 2.0) * (3.0 - 4.0 * np.exp(-1.0 / r) + np.exp(-2.0 / r)))
     )
     return white**2 / tau + np.clip(gm, 0.0, None) + rrw**2 * tau / 3.0
 
@@ -191,7 +192,12 @@ def identify_regimes(
         sigma_log = 1.0 / np.sqrt(2.0 * np.maximum(np.asarray(edf, dtype=float), 1.0))
     try:
         popt, _ = curve_fit(
-            model_log, taus, log_adev, p0=p0, sigma=sigma_log, absolute_sigma=False,
+            model_log,
+            taus,
+            log_adev,
+            p0=p0,
+            sigma=sigma_log,
+            absolute_sigma=False,
             maxfev=20000,
             bounds=([0, 0, taus[1], 0], [np.inf, np.inf, taus[-1] * 2, np.inf]),
         )
@@ -251,9 +257,15 @@ def plot_allan(
         )
 
     # Slope reference triangles (-1/2 and +1/2).
-    ax.text(0.02, 0.06, "slope -1/2: white (ARW/VRW)\nflat: bias instability\nslope +1/2: RRW",
-            transform=ax.transAxes, fontsize=9, va="bottom",
-            bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.85))
+    ax.text(
+        0.02,
+        0.06,
+        "slope -1/2: white (ARW/VRW)\nflat: bias instability\nslope +1/2: RRW",
+        transform=ax.transAxes,
+        fontsize=9,
+        va="bottom",
+        bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.85),
+    )
 
     ax.set_xlabel(r"averaging time $\tau$ [s]")
     ax.set_ylabel(r"Allan deviation $\sigma(\tau)$")
@@ -279,8 +291,10 @@ def main() -> None:
     for ch in ("accel", "gyro"):
         taus, adev, _edf, fit = characterize_axes(raw[ch], dt)
         channels[ch] = (taus, adev, fit)
-        print(f"{ch}: N={fit.white:.3e}  B={fit.bias_instability:.3e}  "
-              f"T={fit.bias_tau:.0f}s  K={fit.rrw:.3e}  (sigma_GM={fit.sigma_gm:.3e})")
+        print(
+            f"{ch}: N={fit.white:.3e}  B={fit.bias_instability:.3e}  "
+            f"T={fit.bias_tau:.0f}s  K={fit.rrw:.3e}  (sigma_GM={fit.sigma_gm:.3e})"
+        )
 
     fig_dir = sensors_dir / "figures"
     fig_dir.mkdir(exist_ok=True)

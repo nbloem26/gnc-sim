@@ -14,5 +14,8 @@ foreach(test_src ${GNCSIM_TEST_SOURCES})
   get_filename_component(test_name "${test_src}" NAME_WE)
   add_executable(${test_name} "${test_src}")
   target_link_libraries(${test_name} PRIVATE gncsim_core GTest::gtest_main)
+  # The portable config-fuzz stress test pulls in the shared fuzz target header (fuzz/), which it
+  # shares with the libFuzzer harness so both exercise byte-for-byte the same loader contract.
+  target_include_directories(${test_name} PRIVATE "${CMAKE_SOURCE_DIR}/fuzz")
   add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()

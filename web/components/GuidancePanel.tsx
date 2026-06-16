@@ -74,7 +74,7 @@ export default function GuidancePanel({ result }: { result: SimResult }) {
     <div>
       <h3 style={{ margin: '0 0 4px' }}>Guidance</h3>
       <p className="muted" style={{ marginTop: 0 }}>
-        Proportional-navigation homing signals: the loop drives line-of-sight rate
+        Homing-guidance signals: the law drives line-of-sight rate
         toward zero while closing range.
       </p>
       <Plot

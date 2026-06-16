@@ -2,9 +2,22 @@
 /build/
 /build-native/
 /build-wasm/
+/build-python/
+# Any other out-of-source build dir (e.g. build-fmi, build-tidy, build-asan, build-cov...).
+/build-*/
+# Packaged FMI 2.0 Co-Simulation FMU (issue #44) — a build product.
+*.fmu
 *.o
+
+# Generated Doxygen API reference (rebuilt by `doxygen docs/Doxyfile` / the CI docs job)
+/docs/api/
+/docs/Doxyfile.ci
 *.a
 *.obj
+# Python SDK (issue #32): the compiled pybind11 extension is a build product (CMake drops it into
+# bindings/gncsim/); only the source + package wrapper are committed.
+bindings/gncsim/*.so
+bindings/gncsim/*.pyd
 
 # Native run outputs (keep the sample)
 /runs/*

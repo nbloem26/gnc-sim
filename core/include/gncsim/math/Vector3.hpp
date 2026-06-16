@@ -1,10 +1,12 @@
-// gnc-sim — 3D vector. Header-only, vector-space ops for RK4 integration.
+/// @file Vector3.hpp
+/// @brief 3D vector — header-only, with the vector-space operators the RK4 integrator needs.
 #pragma once
 
 #include <cmath>
 
 namespace gncsim {
 
+/// @brief A Cartesian 3-vector (position, velocity, acceleration, force).
 struct Vector3 {
   double x = 0.0;
   double y = 0.0;
@@ -20,9 +22,24 @@ struct Vector3 {
   constexpr Vector3 operator/(double s) const { return {x / s, y / s, z / s}; }
   constexpr Vector3 operator-() const { return {-x, -y, -z}; }
 
-  Vector3& operator+=(const Vector3& o) { x += o.x; y += o.y; z += o.z; return *this; }
-  Vector3& operator-=(const Vector3& o) { x -= o.x; y -= o.y; z -= o.z; return *this; }
-  Vector3& operator*=(double s) { x *= s; y *= s; z *= s; return *this; }
+  Vector3& operator+=(const Vector3& o) {
+    x += o.x;
+    y += o.y;
+    z += o.z;
+    return *this;
+  }
+  Vector3& operator-=(const Vector3& o) {
+    x -= o.x;
+    y -= o.y;
+    z -= o.z;
+    return *this;
+  }
+  Vector3& operator*=(double s) {
+    x *= s;
+    y *= s;
+    z *= s;
+    return *this;
+  }
 
   double dot(const Vector3& o) const { return x * o.x + y * o.y + z * o.z; }
   Vector3 cross(const Vector3& o) const {

@@ -30,9 +30,9 @@ bool invert3x3(const std::array<double, 9>& m, std::array<double, 9>& out) {
   const double d = m[3], e = m[4], f = m[5];
   const double g = m[6], h = m[7], i = m[8];
 
-  const double A = e * i - f * h;   // cofactor 00
+  const double A = e * i - f * h;     // cofactor 00
   const double B = -(d * i - f * g);  // cofactor 01
-  const double C = d * h - e * g;   // cofactor 02
+  const double C = d * h - e * g;     // cofactor 02
   const double det = a * A + b * B + c * C;
   if (std::fabs(det) < 1e-300) return false;
   const double inv_det = 1.0 / det;
@@ -63,22 +63,23 @@ void Ekf::predict(const Vector3& a_vehicle) {
 
   // Control input: in the relative frame the known forcing term is minus the vehicle's own accel
   // (gravity cancels as a common-mode term between target and vehicle).
-  const double ux = -a_vehicle.x, uy = -a_vehicle.y, uz = -a_vehicle.z;
-  const double dt = dt_;
-  const double half_dt2 = 0.5 * dt * dt;
+  const double ux_mps2 = -a_vehicle.x, uy_mps2 = -a_vehicle.y, uz_mps2 = -a_vehicle.z;
+  const double dt_s = dt_;
+  const double half_dt2 = 0.5 * dt_s * dt_s;
 
   // x' = F x + B u, with F = [[I, dt I],[0, I]]:
   //   pos' = pos + vel*dt + 0.5*u*dt^2
   //   vel' = vel + u*dt
-  x_[0] += x_[3] * dt + half_dt2 * ux;
-  x_[1] += x_[4] * dt + half_dt2 * uy;
-  x_[2] += x_[5] * dt + half_dt2 * uz;
-  x_[3] += ux * dt;
-  x_[4] += uy * dt;
-  x_[5] += uz * dt;
+  x_[0] += x_[3] * dt_s + half_dt2 * ux_mps2;
+  x_[1] += x_[4] * dt_s + half_dt2 * uy_mps2;
+  x_[2] += x_[5] * dt_s + half_dt2 * uz_mps2;
+  x_[3] += ux_mps2 * dt_s;
+  x_[4] += uy_mps2 * dt_s;
+  x_[5] += uz_mps2 * dt_s;
 
   // P' = F P F^T + Q. F mixes the velocity block into the position block per axis; with the sparse
-  // structure this is, treating P as 2x2 blocks of diagonal 3x3 sub-blocks per axis [Ppp Ppv; Pvp Pvv]:
+  // structure this is, treating P as 2x2 blocks of diagonal 3x3 sub-blocks per axis [Ppp Ppv; Pvp
+  // Pvv]:
   //   Ppp' = Ppp + dt*(Ppv + Pvp) + dt^2*Pvv
   //   Ppv' = Ppv + dt*Pvv
   //   Pvp' = Pvp + dt*Pvv
@@ -92,7 +93,7 @@ void Ekf::predict(const Vector3& a_vehicle) {
   std::array<double, 36> fp{};
   for (int j = 0; j < 6; ++j) {
     for (int i = 0; i < 3; ++i) {
-      fp[i * 6 + j] = P(i, j) + dt * P(i + 3, j);
+      fp[i * 6 + j] = P(i, j) + dt_s * P(i + 3, j);
     }
     for (int i = 3; i < 6; ++i) {
       fp[i * 6 + j] = P(i, j);
@@ -104,7 +105,7 @@ void Ekf::predict(const Vector3& a_vehicle) {
   std::array<double, 36> fpft{};
   for (int i = 0; i < 6; ++i) {
     for (int j = 0; j < 3; ++j) {
-      fpft[i * 6 + j] = fp[i * 6 + j] + dt * fp[i * 6 + (j + 3)];
+      fpft[i * 6 + j] = fp[i * 6 + j] + dt_s * fp[i * 6 + (j + 3)];
     }
     for (int j = 3; j < 6; ++j) {
       fpft[i * 6 + j] = fp[i * 6 + j];
@@ -113,9 +114,9 @@ void Ekf::predict(const Vector3& a_vehicle) {
 
   // Process noise Q (continuous white-noise acceleration), per axis:
   //   Q = q * [[dt^3/3 I, dt^2/2 I],[dt^2/2 I, dt I]]
-  const double q_pp = q_ * dt * dt * dt / 3.0;
-  const double q_pv = q_ * dt * dt / 2.0;
-  const double q_vv = q_ * dt;
+  const double q_pp = q_ * dt_s * dt_s * dt_s / 3.0;
+  const double q_pv = q_ * dt_s * dt_s / 2.0;
+  const double q_vv = q_ * dt_s;
   for (int k = 0; k < 36; ++k) p_[k] = fpft[k];
   for (int a = 0; a < 3; ++a) {
     P(a, a) += q_pp;          // position-position
@@ -128,7 +129,8 @@ void Ekf::predict(const Vector3& a_vehicle) {
 // ── Measurement update ──────────────────────────────────────────────────────────────────────────
 void Ekf::update(double az, double el, double range) {
   if (!initialized_) {
-    // Bootstrap: reconstruct the relative position from the spherical measurement, velocity unknown.
+    // Bootstrap: reconstruct the relative position from the spherical measurement, velocity
+    // unknown.
     const double cos_el = std::cos(el);
     x_[0] = range * cos_el * std::cos(az);
     x_[1] = range * cos_el * std::sin(az);
@@ -138,8 +140,8 @@ void Ekf::update(double az, double el, double range) {
     // Large, diagonal initial covariance: position roughly to the measurement scale, velocity wide.
     for (int k = 0; k < 36; ++k) p_[k] = 0.0;
     auto P0 = [&](int idx) -> double& { return p_[idx * 6 + idx]; };
-    const double pos_var = 1.0e6;   // ~1 km std
-    const double vel_var = 1.0e6;   // ~1 km/s std
+    const double pos_var = 1.0e6;  // ~1 km std
+    const double vel_var = 1.0e6;  // ~1 km/s std
     P0(0) = P0(1) = P0(2) = pos_var;
     P0(3) = P0(4) = P0(5) = vel_var;
 
@@ -148,37 +150,37 @@ void Ekf::update(double az, double el, double range) {
     return;
   }
 
-  const double px = x_[0], py = x_[1], pz = x_[2];
-  const double rho2 = px * px + py * py;
-  double rho = std::sqrt(rho2);
-  const double r2 = rho2 + pz * pz;
-  double r = std::sqrt(r2);
+  const double px_m = x_[0], py_m = x_[1], pz_m = x_[2];
+  const double rho2 = px_m * px_m + py_m * py_m;
+  double rho_m = std::sqrt(rho2);
+  const double r2 = rho2 + pz_m * pz_m;
+  double r_m = std::sqrt(r2);
   // Guard a degenerate geometry (vehicle and target coincident): skip the update, keep prior.
-  if (rho < 1e-9 || r < 1e-9) {
+  if (rho_m < 1e-9 || r_m < 1e-9) {
     nis_ = 0.0;
     return;
   }
 
   // Predicted measurement h(x).
-  const double az_pred = std::atan2(py, px);
-  const double el_pred = std::atan2(pz, rho);
-  const double r_pred = r;
+  const double az_pred_rad = std::atan2(py_m, px_m);
+  const double el_pred_rad = std::atan2(pz_m, rho_m);
+  const double r_pred_m = r_m;
 
   // Measurement Jacobian H (3x6); velocity columns are zero.
   // Row layout: [d/dpx, d/dpy, d/dpz, 0, 0, 0]
   std::array<double, 18> H{};  // 3x6 row-major
   // az = atan2(py, px)
-  H[0] = -py / rho2;
-  H[1] = px / rho2;
+  H[0] = -py_m / rho2;
+  H[1] = px_m / rho2;
   H[2] = 0.0;
   // el = atan2(pz, rho)
-  H[6] = -px * pz / (r2 * rho);
-  H[7] = -py * pz / (r2 * rho);
-  H[8] = rho / r2;
+  H[6] = -px_m * pz_m / (r2 * rho_m);
+  H[7] = -py_m * pz_m / (r2 * rho_m);
+  H[8] = rho_m / r2;
   // range = r
-  H[12] = px / r;
-  H[13] = py / r;
-  H[14] = pz / r;
+  H[12] = px_m / r_m;
+  H[13] = py_m / r_m;
+  H[14] = pz_m / r_m;
 
   auto P = [&](int row, int col) -> double { return p_[row * 6 + col]; };
 
@@ -225,8 +227,9 @@ void Ekf::update(double az, double el, double range) {
     }
   }
 
-  // Innovation y = z - h(x); wrap the azimuth (and elevation, bounded to [-pi/2,pi/2], stays small).
-  std::array<double, 3> y{wrapPi(az - az_pred), wrapPi(el - el_pred), range - r_pred};
+  // Innovation y = z - h(x); wrap the azimuth (and elevation, bounded to [-pi/2,pi/2], stays
+  // small).
+  std::array<double, 3> y{wrapPi(az - az_pred_rad), wrapPi(el - el_pred_rad), range - r_pred_m};
 
   // NIS = y^T Sinv y (chi-square, dof = 3).
   double nis = 0.0;

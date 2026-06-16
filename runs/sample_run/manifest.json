@@ -95,6 +95,7 @@
   "git_sha": "",
   "intercept": true,
   "intercept_time": 14.024519842824688,
+  "launch_time": 0.0,
   "miss_distance": 0.000115232999095839,
   "model": "3dof",
   "num_frames": 2806,

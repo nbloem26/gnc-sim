@@ -54,6 +54,43 @@ export const VALIDATION_FIGURES: Fig[] = [
       'Consolidated analytical checks — energy/Mach consistency, integrator convergence, and ' +
       'guidance-law behaviour — confirming the dynamics core matches closed-form expectations.',
   },
+  {
+    src: '/figures/uq_convergence.png',
+    title: 'Monte Carlo Convergence — CEP with Confidence Band',
+    caption:
+      'The Circular Error Probable plotted against the number of Monte Carlo cases, with a ' +
+      'running 95% bootstrap confidence band. The estimate settles and the band tightens as ' +
+      '1/sqrt(N), making a campaign’s statistical sufficiency visible: enough cases have ' +
+      'been run once the band is narrow relative to the headline number.',
+  },
+  {
+    src: '/figures/uq_sobol.png',
+    title: 'Global Sensitivity — Sobol Indices',
+    caption:
+      'First- and total-order Sobol indices rank the dispersion inputs (launch speed, launch ' +
+      'elevation, target position, weave phase) by how much each drives miss distance. ' +
+      'Computed with a hand-rolled Saltelli sampler over single deterministic engagements — ' +
+      'the variance decomposition that tells you which uncertainty to reduce first.',
+  },
+  {
+    src: '/figures/phenomenology_roc.png',
+    title: 'CA-CFAR Detection ROC — Pd vs Pfa',
+    caption:
+      'Cell-Averaging CFAR detection curves: probability of detection against probability of ' +
+      'false alarm across a sweep of single-pulse SNRs (Swerling II target, 24 reference cells). ' +
+      'The open markers are a 400k-look Monte-Carlo ensemble landing on the closed-form curves, ' +
+      'and the noise-only empirical false-alarm rate matches the design Pfa — the same model the ' +
+      'in-sim radar_pheno / ir_pheno sensors use to turn signals into detections.',
+  },
+  {
+    src: '/figures/range_doppler_map.png',
+    title: 'Range-Doppler Map with CA-CFAR',
+    caption:
+      'A synthetic range-Doppler map: a Swerling-fluctuating moving-target return in an ' +
+      'exponential noise floor with a stationary zero-Doppler clutter ridge. The ridge is ' +
+      'MTI-notched, then CA-CFAR thresholds the remaining cells; the detector circles the target ' +
+      'while holding the design false-alarm rate across the background.',
+  },
 ];
 
 function Figure({ fig }: { fig: Fig }) {

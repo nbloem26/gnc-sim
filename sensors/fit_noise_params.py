@@ -20,7 +20,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-
 from characterize import characterize_axes
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,7 +63,7 @@ def recover_and_write() -> dict:
         print(_fmt_row(f"{ch}_bias_instab(B)", true[1], fit.bias_instability))
         print(_fmt_row(f"{ch}_bias_tau", true[2], fit.bias_tau))
         rrw_note = "  (below bias floor — not separately identifiable)"
-        print(f"  {ch+'_rrw':16s} true {true[3]:11.3e}   rec {fit.rrw:11.3e}{rrw_note}")
+        print(f"  {ch + '_rrw':16s} true {true[3]:11.3e}   rec {fit.rrw:11.3e}{rrw_note}")
         print()
 
     accel, gyro = results["accel"], results["gyro"]

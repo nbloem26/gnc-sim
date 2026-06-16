@@ -48,8 +48,11 @@ def gm_allan_variance(tau: np.ndarray | float, sigma_gm: float, tcorr: float) ->
     """
     tau = np.asarray(tau, dtype=float)
     r = tcorr / tau
-    var = 2.0 * sigma_gm**2 * r * (
-        1.0 - (r / 2.0) * (3.0 - 4.0 * np.exp(-1.0 / r) + np.exp(-2.0 / r))
+    var = (
+        2.0
+        * sigma_gm**2
+        * r
+        * (1.0 - (r / 2.0) * (3.0 - 4.0 * np.exp(-1.0 / r) + np.exp(-2.0 / r)))
     )
     return np.clip(var, 0.0, None)
 
@@ -81,7 +84,7 @@ def combined_allan_deviation(
 
 
 def true_params_from_model(
-    p: "AxisNoise",
+    p: AxisNoise,
     dt: float,
     n: int,
     num_points: int = 120,
@@ -113,6 +116,7 @@ def true_params_from_model(
         taus, ad, edf = overlapping_allan_deviation(x, dt, num_points=num_points)
         adevs.append(ad)
     adev = np.mean(adevs, axis=0)
+    assert taus is not None and edf is not None  # n_realizations >= 1
     fit = identify_regimes(taus, adev, edf)
     return {
         "white": fit.white,

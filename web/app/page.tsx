@@ -15,11 +15,45 @@ import MonteCarloPanel from '@/components/MonteCarloPanel';
 import ValidationFigures from '@/components/ValidationFigures';
 
 // Ground track pulls in Leaflet (window-bound) — load client-only, no SSR.
-// It is also only imported when the Ground-track tab is actually mounted, so the
-// map never instantiates on first load.
+// It is composed inside the merged "Trajectory & Ground Track" tab, whose
+// render() is invoked lazily by <Tabs> only while that tab is active — so the
+// Leaflet map never instantiates on first load or under any other tab.
 const GroundTrack = dynamic(() => import('@/components/GroundTrack'), {
   ssr: false,
   loading: () => <div className="placeholder">Loading map…</div>,
+});
+
+// Telemetry Explorer instantiates Plotly imperatively per pane — load client-only
+// and only when its tab actually mounts (lazy via <Tabs>), so first load stays light.
+const TelemetryExplorer = dynamic(() => import('@/components/TelemetryExplorer'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading explorer…</div>,
+});
+
+// 3D Globe pulls in CesiumJS — a heavy, window-bound bundle. Load client-only and
+// only when its tab actually mounts (lazy via <Tabs>): the Cesium chunk must never
+// land in the first-load JS or under any other tab.
+const CesiumGlobe = dynamic(() => import('@/components/CesiumGlobe'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading 3D globe…</div>,
+});
+
+// Studios area: the reusable studio framework (issue #104). It pulls in the
+// studio registry + the Plotly-backed <StudioShell>. Load client-only and only
+// when the "Studios" mode is active, so the registry, every studio, and Plotly
+// stay out of the first-load chunk.
+const StudiosArea = dynamic(() => import('@/components/studio/StudiosArea'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading studios…</div>,
+});
+
+// Scenario authoring (issue #120): a Cesium-globe authoring surface that emits a
+// runnable SimConfig. It pulls in the same heavy CesiumJS bundle as the 3D Globe
+// tab. Load client-only and only when the "Author" surface is active, so Cesium
+// (already its own code-split chunk) never lands in the first-load JS.
+const ScenarioAuthor = dynamic(() => import('@/components/ScenarioAuthor'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading scenario author…</div>,
 });
 
 export default function Home() {
@@ -30,6 +64,11 @@ export default function Home() {
   const [mock, setMock] = useState(false);
   const [modeKnown, setModeKnown] = useState(false);
   const [activeTab, setActiveTab] = useState('trajectory');
+  // Top-level surface: the engagement Simulator, interactive Studios, or the
+  // globe-based scenario Author (issue #120).
+  const [area, setArea] = useState<'simulator' | 'studios' | 'author'>(
+    'simulator',
+  );
 
   // Warm the WASM module and resolve real-vs-mock on mount.
   useEffect(() => {
@@ -38,6 +77,13 @@ export default function Home() {
       setModeKnown(isResolved());
     });
   }, []);
+
+  // Run a config authored on the globe: switch to the Simulator surface so the
+  // results/tabs render, then fire the normal run flow.
+  async function handleRunAuthored(config: SimConfig) {
+    setArea('simulator');
+    await handleRun(config);
+  }
 
   async function handleRun(config: SimConfig) {
     setRunning(true);
@@ -64,8 +110,16 @@ export default function Home() {
     return [
       {
         id: 'trajectory',
-        label: 'Trajectory',
-        render: () => <TrajectoryPlot result={result} />,
+        label: 'Trajectory & Ground Track',
+        // Stack the trajectory plot above the Leaflet ground track. Because
+        // this render() runs only while the tab is active, the lazy
+        // <GroundTrack> (and its Leaflet map) still mounts only on activation.
+        render: () => (
+          <div className="trajGroundStack">
+            <TrajectoryPlot result={result} />
+            <GroundTrack result={result} />
+          </div>
+        ),
       },
       {
         id: 'guidance',
@@ -88,14 +142,19 @@ export default function Home() {
         render: () => <EnvironmentPanel result={result} />,
       },
       {
-        id: 'groundtrack',
-        label: 'Ground Track',
-        render: () => <GroundTrack result={result} />,
-      },
-      {
         id: 'montecarlo',
         label: 'Monte Carlo',
         render: () => <MonteCarloPanel baseConfig={lastConfig} mock={mock} />,
+      },
+      {
+        id: 'globe',
+        label: '3D Globe',
+        render: () => <CesiumGlobe result={result} />,
+      },
+      {
+        id: 'explorer',
+        label: 'Telemetry Explorer',
+        render: () => <TelemetryExplorer result={result} />,
       },
       {
         id: 'validation',
@@ -111,7 +170,7 @@ export default function Home() {
         <div
           style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
         >
-          <h1 style={{ marginBottom: 0 }}>Interactive GNC Simulator</h1>
+          <h1 style={{ marginBottom: 0 }}>Interactive GNC engagement simulator</h1>
           {modeKnown ? (
             <span
               className={`badge ${mock ? 'mock' : 'real'}`}
@@ -124,13 +183,61 @@ export default function Home() {
               {mock ? 'MOCK · sample data' : 'LIVE · WASM'}
             </span>
           ) : null}
+          <div
+            className="seg"
+            role="tablist"
+            aria-label="Surface"
+            style={{ marginLeft: 'auto' }}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'simulator'}
+              className={area === 'simulator' ? 'segActive' : ''}
+              onClick={() => setArea('simulator')}
+            >
+              Simulator
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'studios'}
+              className={area === 'studios' ? 'segActive' : ''}
+              onClick={() => setArea('studios')}
+            >
+              Studios
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'author'}
+              className={area === 'author' ? 'segActive' : ''}
+              onClick={() => setArea('author')}
+            >
+              Author
+            </button>
+          </div>
         </div>
         <p className="muted">
-          Adjust the scenario on the left and run a proportional-navigation homing
-          engagement. The C++ flight-dynamics core executes entirely in your browser.
+          Pick a scenario on the left and run a real engagement — the deterministic C++
+          guidance, navigation &amp; control core executes entirely in your browser via
+          WebAssembly. Models span 3/6-DOF flight dynamics, EKF / IMM / JPDA estimation,
+          radar &amp; IR fusion, PN / APN / optimal (ZEM-ZEV) guidance, ballistic &amp; hypersonic
+          threats, and many-on-many campaigns.
         </p>
       </div>
 
+      {area === 'studios' ? (
+        // Lazy-mounted: the Studios chunk (registry + studios + Plotly shell)
+        // is only fetched/instantiated once this branch renders.
+        <StudiosArea />
+      ) : area === 'author' ? (
+        // Lazy-mounted: the Cesium authoring chunk is only fetched/instantiated
+        // once this branch renders, keeping Cesium out of the first-load JS.
+        <div className="card">
+          <ScenarioAuthor onRun={handleRunAuthored} running={running} />
+        </div>
+      ) : (
       <div className="shell">
         <ParamForm onRun={handleRun} running={running} />
 
@@ -182,6 +289,7 @@ export default function Home() {
           )}
         </div>
       </div>
+      )}
     </>
   );
 }

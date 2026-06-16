@@ -1,0 +1,6 @@
+# gnc-sim C++ style — Google base, widened column limit to match existing code.
+BasedOnStyle: Google
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: All
+DerivePointerAlignment: false
+PointerAlignment: Left

@@ -1,0 +1,98 @@
+{
+  "_comment": [
+    "Model-fidelity tiering manifest (issue #50).",
+    "",
+    "Every model resolved by core/src/model/Registry.cpp is classified into one of two tiers:",
+    "  - fast: WASM-safe, interactive. Native<->WASM parity is GUARANTEED (|delta|=0 within the",
+    "          parity-check tolerance) by the determinism guard, which runs every fast-tier config",
+    "          through scripts/parity-check.mjs.",
+    "  - hifi: high-fidelity native path, GOLDEN-checked. Selected by config where a model has a",
+    "          fast counterpart (e.g. 6dof vs 6dof_hifi, ekf vs imm, radar vs radar_pheno, round",
+    "          flat-gravity vs round+egm/extended atmosphere).",
+    "",
+    "The determinism guard (scripts/determinism-guard.mjs) and the unit test",
+    "postproc/tests/test_tiers.py read THIS file. It is authoritative: adding a fast-tier model to",
+    "the registry without listing it here (and giving it a fast-tier config that exercises it) fails",
+    "the guard, so parity coverage always tracks the fast-tier model set.",
+    "",
+    "models: per registry family, model-key -> tier.",
+    "fast_tier_configs: configs the guard runs through parity (each must be |delta|=0).",
+    "hifi_configs: configs covered by the golden harness (postproc/gncpost/golden.py) instead.",
+    "config_models: maps each fast-tier config to the fast-tier model keys it exercises, so the",
+    "  guard can prove every fast-tier model is reachable from at least one parity-checked config."
+  ],
+  "models": {
+    "Guidance": {
+      "pronav": "fast",
+      "apn": "fast",
+      "zemzev": "fast",
+      "none": "fast"
+    },
+    "Navigation": {
+      "alpha_beta": "fast",
+      "ekf": "fast",
+      "imm": "hifi"
+    },
+    "Sensor": {
+      "radar": "fast",
+      "ir": "fast",
+      "radar_pheno": "hifi",
+      "ir_pheno": "hifi"
+    },
+    "Dynamics": {
+      "3dof": "fast",
+      "6dof": "fast",
+      "6dof_hifi": "hifi"
+    },
+    "Environment": {
+      "flat": "fast",
+      "round": "fast"
+    },
+    "Threat": {
+      "constant": "fast",
+      "weave": "fast",
+      "icbm": "fast",
+      "hgv": "fast",
+      "rv_penaids": "fast"
+    }
+  },
+  "fast_tier_configs": [
+    "homing_3dof",
+    "homing_6dof",
+    "homing_3dof_ekf",
+    "homing_boost",
+    "homing_zemzev",
+    "engagement_pkill",
+    "ballistic_flat",
+    "ballistic_round",
+    "projectile_3dof",
+    "threat_icbm",
+    "threat_hgv",
+    "threat_rv_penaids",
+    "track_radar_only",
+    "track_ir_only",
+    "montecarlo"
+  ],
+  "hifi_configs": [
+    "homing_6dof_hifi",
+    "ballistic_round_hifi",
+    "track_phenomenology"
+  ],
+  "config_models": {
+    "homing_3dof": ["pronav", "alpha_beta", "3dof", "flat", "constant"],
+    "homing_6dof": ["pronav", "alpha_beta", "6dof", "flat", "constant"],
+    "homing_3dof_ekf": ["pronav", "ekf", "3dof", "flat", "constant"],
+    "homing_boost": ["pronav", "alpha_beta", "3dof", "flat", "constant"],
+    "homing_zemzev": ["zemzev", "alpha_beta", "3dof", "flat", "weave"],
+    "engagement_pkill": ["apn", "alpha_beta", "3dof", "flat", "weave"],
+    "ballistic_flat": ["none", "3dof", "flat", "constant"],
+    "ballistic_round": ["none", "3dof", "round", "constant"],
+    "projectile_3dof": ["none", "3dof", "flat", "constant"],
+    "threat_icbm": ["pronav", "alpha_beta", "3dof", "icbm"],
+    "threat_hgv": ["pronav", "alpha_beta", "3dof", "hgv"],
+    "threat_rv_penaids": ["pronav", "alpha_beta", "3dof", "rv_penaids"],
+    "track_radar_only": ["pronav", "radar", "3dof", "constant"],
+    "track_ir_only": ["pronav", "ir", "3dof", "constant"],
+    "montecarlo": ["pronav", "alpha_beta", "3dof", "weave"]
+  }
+}

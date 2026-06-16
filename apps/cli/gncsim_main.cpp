@@ -7,11 +7,18 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "gncsim/core/Config.hpp"
 #include "gncsim/core/Serialize.hpp"
+#include "gncsim/interop/Federation.hpp"
+#include "gncsim/interop/MessageBus.hpp"
+#include "gncsim/interop/Recording.hpp"
+#include "gncsim/scenario/ManyOnMany.hpp"
 #include "gncsim/scenario/Runner.hpp"
 
 namespace {
@@ -30,9 +37,12 @@ void writeFile(const std::string& path, const std::string& content) {
   out << content;
 }
 
-// Minimal `mkdir -p` without <filesystem> coupling concerns on the CLI side.
+// Minimal `mkdir -p` without <filesystem> coupling concerns on the CLI side. This is offline
+// developer tooling (not the pure core, never WASM), so shelling out to `mkdir` is acceptable here.
+// NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe): trusted CLI-side path only.
 void ensureDir(const std::string& dir) {
-  std::string cmd = "mkdir -p '" + dir + "'";
+  const std::string cmd = "mkdir -p '" + dir + "'";
+  // NOLINTNEXTLINE(bugprone-command-processor,concurrency-mt-unsafe): offline CLI tooling.
   if (std::system(cmd.c_str()) != 0) throw std::runtime_error("cannot create dir: " + dir);
 }
 
@@ -43,6 +53,44 @@ std::string arg(int argc, char** argv, const std::string& key, const std::string
   return fallback;
 }
 
+// One row of a summary.csv / checkpoint: "case,seed,miss_distance,intercept_time,intercept".
+std::string formatCase(const gncsim::MonteCarloCase& c) {
+  std::ostringstream row;
+  row.precision(9);
+  row << c.index << ',' << c.seed << ',' << c.miss_distance << ',' << c.intercept_time << ','
+      << (c.intercept ? 1 : 0);
+  return row.str();
+}
+
+// Parse a previously-written summary.csv back into completed cases so a campaign can RESUME: any
+// case already present is skipped on restart and its stored result is reused (the dispersion phase
+// is replayed in full, so seeds line up). Tolerates a missing file (fresh run -> empty).
+std::vector<gncsim::MonteCarloCase> loadCheckpoint(const std::string& path) {
+  std::vector<gncsim::MonteCarloCase> done;
+  std::ifstream in(path);
+  if (!in) return done;
+  std::string line;
+  std::getline(in, line);  // header
+  while (std::getline(in, line)) {
+    if (line.empty()) continue;
+    std::istringstream ls(line);
+    std::string tok;
+    gncsim::MonteCarloCase c;
+    if (!std::getline(ls, tok, ',')) continue;
+    c.index = std::stoi(tok);
+    if (!std::getline(ls, tok, ',')) continue;
+    c.seed = static_cast<std::uint64_t>(std::stoull(tok));
+    if (!std::getline(ls, tok, ',')) continue;
+    c.miss_distance = std::stod(tok);
+    if (!std::getline(ls, tok, ',')) continue;
+    c.intercept_time = std::stod(tok);
+    if (!std::getline(ls, tok, ',')) continue;
+    c.intercept = (std::stoi(tok) != 0);
+    done.push_back(c);
+  }
+  return done;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -51,9 +99,17 @@ int main(int argc, char** argv) {
     const std::string out_dir = arg(argc, argv, "--out", "runs/run");
     const std::string seed_override = arg(argc, argv, "--seed", "");
     const std::string json_path = arg(argc, argv, "--json", "");  // also emit WASM-format JSON
+    const std::string workers_str = arg(argc, argv, "--workers", "1");  // MC thread-pool size
+    // Opt-in distributed-federation recording (issue #47): drain the run onto the message bus and
+    // record every per-step snapshot to a replayable .gncr file. Empty (default) = no federation.
+    const std::string federation_record = arg(argc, argv, "--federation-record", "");
+    const bool checkpoint =
+        !arg(argc, argv, "--checkpoint", "").empty() || arg(argc, argv, "--resume", "") == "1";
+    const int num_workers = std::stoi(workers_str);
 
     if (config_path.empty()) {
-      std::cerr << "usage: gncsim --config <file.json> --out <dir> [--seed N]\n";
+      std::cerr << "usage: gncsim --config <file.json> --out <dir> [--seed N] "
+                   "[--workers K] [--checkpoint 1]\n";
       return 2;
     }
 
@@ -65,19 +121,125 @@ int main(int argc, char** argv) {
 
     ensureDir(out_dir);
 
-    // Monte Carlo batch: write summary.csv (one row/case) + full telemetry for case 0.
+    // Many-on-many engagement campaign (issue #45): orchestrate N interceptors vs M threats with
+    // weapon-target assignment + the chosen doctrine, write a per-pairing P(kill) matrix, the
+    // assignment, per-threat outcomes, and the rolled-up campaign metrics (leakage, interceptors
+    // expended, P(raid annihilation)). Reuses the per-engagement physics; the single-engagement and
+    // Monte-Carlo paths below are untouched.
+    if (cfg.many_on_many.enabled) {
+      const gncsim::CampaignResult camp = gncsim::runManyOnMany(cfg);
+
+      // pairings.csv: interceptor,threat,miss_distance_m,p_kill
+      {
+        std::ostringstream pp;
+        pp.precision(9);
+        pp << "interceptor,threat,miss_distance_m,p_kill\n";
+        for (const auto& p : camp.pairings) {
+          pp << p.interceptor_index << ',' << p.threat_index << ',' << p.miss_distance_m << ','
+             << p.p_kill << '\n';
+        }
+        writeFile(out_dir + "/pairings.csv", pp.str());
+      }
+      // assignments.csv: interceptor,threat,p_kill
+      {
+        std::ostringstream as;
+        as.precision(9);
+        as << "interceptor,threat,p_kill\n";
+        for (const auto& a : camp.assignments) {
+          as << a.interceptor_index << ',' << a.threat_index << ',' << a.p_kill << '\n';
+        }
+        writeFile(out_dir + "/assignments.csv", as.str());
+      }
+      // threats.csv: threat,shots_committed,cumulative_pk,killed
+      {
+        std::ostringstream th;
+        th.precision(9);
+        th << "threat,shots_committed,cumulative_pk,killed\n";
+        for (const auto& o : camp.threats) {
+          th << o.threat_index << ',' << o.shots_committed << ',' << o.cumulative_pk << ','
+             << (o.killed ? 1 : 0) << '\n';
+        }
+        writeFile(out_dir + "/threats.csv", th.str());
+      }
+      // campaign.json: the rolled-up metrics.
+      {
+        std::ostringstream cj;
+        cj.precision(9);
+        cj << "{\n"
+           << "  \"doctrine\": \"" << camp.doctrine << "\",\n"
+           << "  \"num_interceptors\": " << camp.num_interceptors << ",\n"
+           << "  \"num_threats\": " << camp.num_threats << ",\n"
+           << "  \"interceptors_expended\": " << camp.interceptors_expended << ",\n"
+           << "  \"leakers\": " << camp.leakers << ",\n"
+           << "  \"expected_leakage\": " << camp.expected_leakage << ",\n"
+           << "  \"expected_kills\": " << camp.expected_kills << ",\n"
+           << "  \"p_raid_annihilation\": " << camp.p_raid_annihilation << ",\n"
+           << "  \"mean_leakage\": " << camp.mean_leakage << ",\n"
+           << "  \"mc_p_annihilation\": " << camp.mc_p_annihilation << "\n"
+           << "}\n";
+        writeFile(out_dir + "/campaign.json", cj.str());
+      }
+
+      std::cout << "many-on-many: doctrine=" << camp.doctrine
+                << " interceptors=" << camp.num_interceptors << " threats=" << camp.num_threats
+                << "\n"
+                << "  expended=" << camp.interceptors_expended << " leakers=" << camp.leakers
+                << " p_annihilation=" << camp.mc_p_annihilation
+                << " mean_leakage=" << camp.mean_leakage << "\n"
+                << "wrote " << out_dir << "/{pairings,assignments,threats}.csv + campaign.json\n";
+      return 0;
+    }
+
+    // Monte Carlo batch: write summary.csv (one row/case) + full telemetry for case 0. With
+    // --workers K the cases run on a K-thread pool; the result is bit-identical to the serial
+    // batch. With --checkpoint the summary.csv doubles as a restart log: completed cases are loaded
+    // and skipped, and each freshly-finished case is appended immediately so an interrupted long
+    // campaign can resume and still reproduce the identical aggregate.
     if (cfg.monte_carlo.num_cases > 0) {
-      const auto cases = gncsim::runMonteCarlo(cfg);
+      const std::string summary_path = out_dir + "/summary.csv";
+      const std::string header = "case,seed,miss_distance,intercept_time,intercept\n";
+
+      gncsim::MonteCarloRunOptions opts;
+      opts.num_workers = num_workers;
+
+      std::ofstream append_stream;
+      std::mutex append_mutex;
+      if (checkpoint) {
+        const auto resumed = loadCheckpoint(summary_path);
+        for (const auto& c : resumed) {
+          opts.completed.push_back(c.index);
+          opts.completed_results.push_back(c);
+        }
+        // Re-open in append mode (write the header first if starting fresh) and stream each new
+        // case to disk as it completes. Serialized inside the core, but we also guard the stream
+        // here.
+        const bool had_rows = !resumed.empty();
+        append_stream.open(summary_path, had_rows ? std::ios::app : std::ios::out);
+        if (!append_stream) throw std::runtime_error("cannot open checkpoint: " + summary_path);
+        if (!had_rows) append_stream << header;
+        if (!resumed.empty())
+          std::cout << "checkpoint: resuming, " << resumed.size() << " cases already done\n";
+        opts.on_case_done = [&](const gncsim::MonteCarloCase& c) {
+          std::lock_guard<std::mutex> lock(append_mutex);
+          append_stream << formatCase(c) << '\n';
+          append_stream.flush();
+        };
+      }
+
+      const auto cases = gncsim::runMonteCarloParallel(cfg, opts);
+      append_stream.close();
+
+      // Always (re)write a complete, index-ordered summary.csv from the merged result so the file
+      // is canonical regardless of completion order or a partial checkpoint.
       std::ostringstream summary;
       summary.precision(9);
-      summary << "case,seed,miss_distance,intercept_time,intercept\n";
+      summary << header;
       int hits = 0;
       for (const auto& c : cases) {
-        summary << c.index << ',' << c.seed << ',' << c.miss_distance << ',' << c.intercept_time
-                << ',' << (c.intercept ? 1 : 0) << '\n';
+        summary << formatCase(c) << '\n';
         hits += c.intercept ? 1 : 0;
       }
-      writeFile(out_dir + "/summary.csv", summary.str());
+      writeFile(summary_path, summary.str());
 
       // Representative full run (case 0's seed) for plotting a sample trajectory.
       if (!cases.empty()) {
@@ -104,6 +266,23 @@ int main(int argc, char** argv) {
     writeFile(out_dir + "/manifest.json", gncsim::toManifestJson(result, config_text));
     if (!json_path.empty()) {
       writeFile(json_path, gncsim::toJsonString(result));  // identical shape to the WASM output
+    }
+
+    // Opt-in federation recording: publish the run's per-step entity/track snapshots onto the
+    // message bus through a deterministic FileRecorder and write the replayable recording. This is
+    // driver-side I/O (never the pure core); the bus/adapters live in the interop module.
+    if (!federation_record.empty()) {
+      namespace ip = gncsim::interop;
+      auto recorder = std::make_shared<ip::FileRecorder>();
+      ip::MessageBus bus;
+      bus.attach(recorder);
+      bus.start(/*exercise_id=*/1, /*site_id=*/1, /*app_id=*/1);
+      const auto snaps = ip::snapshotsFromResult(result);
+      for (const auto& s : snaps) bus.publish(s);
+      bus.stop();
+      recorder->writeToFile(federation_record);
+      std::cout << "federation: recorded " << snaps.size() << " snapshots ("
+                << recorder->bytes().size() << " bytes) to " << federation_record << "\n";
     }
 
     std::cout << "scenario=" << result.scenario << " model=" << result.model

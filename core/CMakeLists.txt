@@ -8,6 +8,12 @@ target_include_directories(gncsim_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/inclu
 target_link_libraries(gncsim_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_features(gncsim_core PUBLIC cxx_std_17)
 
+# The Python bindings (issue #32) link this STATIC core into a shared module, which requires
+# position-independent code. Opt-in only: the default native/CLI/test build is unaffected.
+if(GNCSIM_BUILD_PYTHON)
+  set_target_properties(gncsim_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(NOT MSVC)
   target_compile_options(gncsim_core PRIVATE -Wall -Wextra)
 endif()

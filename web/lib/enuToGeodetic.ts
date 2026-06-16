@@ -51,3 +51,37 @@ export function enuPathToLatLngs(
   }
   return out;
 }
+
+/**
+ * Geodetic position with altitude, for the 3D globe (lat/lon in degrees,
+ * altitude in metres above the WGS-84 ellipsoid).
+ */
+export interface LatLonAlt {
+  lat_deg: number;
+  lon_deg: number;
+  alt_m: number;
+}
+
+/**
+ * Project a single ENU point (East/North/Up, metres) to a geodetic
+ * lat/lon/altitude about an origin. ENU Up maps directly to altitude above
+ * the origin's ellipsoidal height `alt0_m`.
+ *
+ * @param east_m  ENU x [m]
+ * @param north_m ENU y [m]
+ * @param up_m    ENU z [m] (altitude above the local tangent plane)
+ * @param lat0_deg origin latitude [deg]
+ * @param lon0_deg origin longitude [deg]
+ * @param alt0_m   origin ellipsoidal height [m]
+ */
+export function enuToLatLonAlt(
+  east_m: number,
+  north_m: number,
+  up_m: number,
+  lat0_deg: number,
+  lon0_deg: number,
+  alt0_m: number,
+): LatLonAlt {
+  const { lat, lon } = enuToLatLon(east_m, north_m, lat0_deg, lon0_deg);
+  return { lat_deg: lat, lon_deg: lon, alt_m: alt0_m + up_m };
+}

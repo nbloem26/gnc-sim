@@ -108,7 +108,5 @@ def run_cli(
         cmd += ["--seed", str(seed)]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"gncsim failed (rc={proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
-        )
+        raise RuntimeError(f"gncsim failed (rc={proc.returncode}):\n{proc.stdout}\n{proc.stderr}")
     return out_dir
