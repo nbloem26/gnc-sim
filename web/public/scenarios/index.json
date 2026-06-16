@@ -19,6 +19,12 @@
       "description": "Full 6-DOF rigid-body homing engagement with autopilot fin control."
     },
     {
+      "id": "homing_6dof_hifi",
+      "file": "homing_6dof_hifi.json",
+      "label": "Homing — 6DOF hi-fi (airframe)",
+      "description": "High-fidelity 6DOF airframe (full inertia tensor, Cn/Cm tables, fin actuator). Base for the Controls Studio airframe linearization."
+    },
+    {
       "id": "homing_boost",
       "file": "homing_boost.json",
       "label": "Homing — boosting motor",

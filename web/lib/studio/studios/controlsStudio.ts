@@ -19,15 +19,22 @@
  * (`actuator_bandwidth_hz`, `actuator_rate_limit_degps`, `rate_gain_kr_ms`).
  */
 
+import type { SimConfig } from '@/lib/types';
+import { loadPresetConfig } from '@/lib/presets';
+import { linearizeAirframe, isMockMode, isResolved } from '@/lib/wasmRunner';
 import type { StudioDef, ParamValues, PlotSpec } from '../types';
 import {
   type ControlsModel,
   airframeOmegaRadps,
+  airframeZeta,
   computeMargins,
   computeNyquist,
   computeStepResponse,
   computeActuatorSim,
 } from './controlsMath';
+
+/** Base airframe preset the real linearization runs against (the hi-fi 6DOF config). */
+const AIRFRAME_PRESET_FILE = 'homing_6dof_hifi.json';
 
 // Shared palette (consistent with the dark Plotly theme).
 const C_CMD = 'rgba(246, 173, 85, 0.9)'; // amber — command / reference
@@ -55,14 +62,87 @@ function fmt(x: number, digits = 2): string {
   return x.toFixed(digits);
 }
 
+/**
+ * Try to replace the reduced static-margin airframe with the REAL 6DOF airframe+actuator
+ * linearization from the WASM core (issue #122): load the hi-fi preset, override its static
+ * stability with the studio's `static_margin_caliber` knob (scaling Cm_alpha so the knob still
+ * stiffens/softens the real airframe), and linearize about the chosen Mach/altitude/alpha. On
+ * success it stamps the real ωn / ζ / control-effectiveness onto the model. Returns a short status
+ * string for the plot captions; returns null (model untouched) in mock mode or if WASM lacks the
+ * `linearize` export — the reduced model is then used as a graceful fallback.
+ */
+async function applyRealLinearization(
+  model: ControlsModel,
+  params: ParamValues,
+): Promise<string | null> {
+  // Mock mode (no WASM artifact) → keep the reduced model.
+  if (isResolved() && isMockMode()) return null;
+
+  let base: SimConfig;
+  try {
+    base = await loadPresetConfig(AIRFRAME_PRESET_FILE);
+  } catch {
+    return null; // preset unavailable in this build → reduced fallback
+  }
+
+  // Map the studio's static-margin knob onto the real Cm_alpha slope: 1 caliber == the preset's
+  // nominal stability, scaled linearly (ωn ∝ sqrt(-Cm_alpha) ∝ sqrt(static margin)). The hi-fi
+  // preset ships a cm_table; clearing it lets the linear cm_alpha slope drive the static stability
+  // so the knob is honoured. Larger SM ⇒ more negative Cm_alpha ⇒ stiffer airframe.
+  const sm = Math.max(Number(params.static_margin_caliber), 1e-3);
+  const cfg: SimConfig = {
+    ...base,
+    aero: {
+      ...base.aero,
+      cm_table: [],
+      cm_alpha: -8.0 * sm,
+    },
+  };
+
+  const trim = {
+    mach: Number(params.trim_mach),
+    altitude_m: Number(params.trim_altitude_m),
+    alpha_rad: (Number(params.trim_alpha_deg) * Math.PI) / 180,
+  };
+
+  let lin;
+  try {
+    lin = await linearizeAirframe(cfg, trim);
+  } catch {
+    return null; // linearization failed → reduced fallback
+  }
+  if (!lin) return null; // WASM present but no `linearize` export → reduced fallback
+
+  // Stamp the real short-period mode onto the model.
+  if (lin.omega_n_radps > 0) model.airframe_omega_radps = lin.omega_n_radps;
+  if (lin.zeta > 0) model.airframe_zeta = lin.zeta;
+
+  // Normalize the real accel-per-deflection DC gain to the studio's dimensionless K_af, preserving
+  // the user's `control_effectiveness` knob as a multiplier on the real airframe gain. The
+  // reference (1131 m/s²/rad) is the preset's nominal effectiveness so the default knob (=1) maps
+  // to a unity normalized gain — matching the reduced model's scaling.
+  const K_REF_MPS2_PER_RAD = 1131.25;
+  const normalized = lin.control_effectiveness_mps2_per_rad / K_REF_MPS2_PER_RAD;
+  if (Number.isFinite(normalized) && normalized !== 0) {
+    model.control_effectiveness = Number(params.control_effectiveness) * normalized;
+  }
+
+  return (
+    `REAL 6DOF airframe @ M${fmt(trim.mach, 1)}, ${fmt(trim.altitude_m / 1000, 1)} km, ` +
+    `α=${fmt(params.trim_alpha_deg as number, 1)}° → ωn ${fmt(lin.omega_n_radps, 1)} rad/s, ` +
+    `ζ ${fmt(lin.zeta, 3)}${lin.stable ? '' : ' (UNSTABLE airframe)'}`
+  );
+}
+
 export const controlsStudio: StudioDef = {
   id: 'controls-autopilot',
   label: 'Controls / Autopilot',
   description:
-    'Loop-shape the pitch/yaw acceleration autopilot: airframe short-period (from static ' +
-    'margin) → fin actuator lag (+ rate/travel limits) → autopilot accel+rate gains. ' +
-    'Watch the step response, Bode/Nyquist stability margins, and actuator saturation respond ' +
-    'to the gains. Reduced-order model of the C++ 6DOF loop (full WASM linearisation is a follow-up).',
+    'Loop-shape the pitch/yaw acceleration autopilot: airframe short-period (from the REAL 6DOF ' +
+    'airframe+actuator linearisation in the C++ core via WASM, at the chosen Mach/altitude/α) → ' +
+    'fin actuator lag (+ rate/travel limits) → autopilot accel+rate gains. Watch the step response, ' +
+    'Bode/Nyquist stability margins, and actuator saturation respond to the gains. Falls back to a ' +
+    'reduced-order airframe in mock mode (no WASM artifact).',
   params: [
     {
       kind: 'number',
@@ -84,6 +164,39 @@ export const controlsStudio: StudioDef = {
       step: 0.05,
       default_value: 1.0,
       help: 'Airframe accel-per-deflection DC gain (∝ Cm_delta / Cm_alpha).',
+    },
+    {
+      kind: 'number',
+      key: 'trim_mach',
+      label: 'Flight condition — Mach',
+      unit: 'M',
+      min_value: 0.5,
+      max_value: 5,
+      step: 0.1,
+      default_value: 2.5,
+      help: 'Freestream Mach the real 6DOF airframe is linearized about (sets q̄ → ωn).',
+    },
+    {
+      kind: 'number',
+      key: 'trim_altitude_m',
+      label: 'Flight condition — altitude',
+      unit: 'm',
+      min_value: 0,
+      max_value: 30000,
+      step: 500,
+      default_value: 6000,
+      help: 'Geometric altitude (USSA76 density). Higher ⇒ lower q̄ ⇒ softer airframe.',
+    },
+    {
+      kind: 'number',
+      key: 'trim_alpha_deg',
+      label: 'Flight condition — trim α',
+      unit: 'deg',
+      min_value: 0.5,
+      max_value: 15,
+      step: 0.5,
+      default_value: 3,
+      help: 'Trim angle of attack the airframe Jacobian is taken about.',
     },
     {
       kind: 'number',
@@ -158,6 +271,9 @@ export const controlsStudio: StudioDef = {
       values: {
         static_margin_caliber: 1.0,
         control_effectiveness: 1.0,
+        trim_mach: 2.5,
+        trim_altitude_m: 6000,
+        trim_alpha_deg: 3,
         actuator_bandwidth_hz: 15,
         actuator_rate_limit_degps: 600,
         actuator_travel_limit_deg: 25,
@@ -172,6 +288,9 @@ export const controlsStudio: StudioDef = {
       values: {
         static_margin_caliber: 0.4,
         control_effectiveness: 1.4,
+        trim_mach: 1.5,
+        trim_altitude_m: 10000,
+        trim_alpha_deg: 5,
         actuator_bandwidth_hz: 8,
         actuator_rate_limit_degps: 400,
         actuator_travel_limit_deg: 25,
@@ -186,6 +305,9 @@ export const controlsStudio: StudioDef = {
       values: {
         static_margin_caliber: 1.0,
         control_effectiveness: 1.0,
+        trim_mach: 3.0,
+        trim_altitude_m: 4000,
+        trim_alpha_deg: 4,
         actuator_bandwidth_hz: 20,
         actuator_rate_limit_degps: 60,
         actuator_travel_limit_deg: 25,
@@ -195,9 +317,17 @@ export const controlsStudio: StudioDef = {
       },
     },
   ],
-  compute(params: ParamValues): PlotSpec[] {
+  async compute(params: ParamValues): Promise<PlotSpec[]> {
     const model = modelFromParams(params);
+
+    // Drive the airframe from the REAL 6DOF linearization via WASM (issue #122). On success this
+    // mutates `model` (ωn / ζ / control-effectiveness) and returns a status note; in mock mode or
+    // without the WASM `linearize` export it returns null and we keep the reduced-order airframe.
+    const linNote = await applyRealLinearization(model, params);
+    const airframeNote = linNote ?? 'reduced-order airframe (mock mode — no WASM)';
+
     const wn = airframeOmegaRadps(model);
+    const zeta = airframeZeta(model);
     const margins = computeMargins(model);
     const nyquist = computeNyquist(model);
     const step = computeStepResponse(model);
@@ -211,7 +341,8 @@ export const controlsStudio: StudioDef = {
       title:
         `Step response — rise ${fmt(step.rise_time_s * 1000, 0)} ms, ` +
         `overshoot ${fmt(step.overshoot_pct, 0)}%, ` +
-        `settling ${fmt(step.settling_time_s * 1000, 0)} ms`,
+        `settling ${fmt(step.settling_time_s * 1000, 0)} ms` +
+        `  ·  airframe ωn ${fmt(wn, 1)} rad/s, ζ ${fmt(zeta, 3)}\n${airframeNote}`,
       data: [
         {
           x: [step.t_s[0], step.t_s[step.t_s.length - 1]],
