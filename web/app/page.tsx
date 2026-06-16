@@ -47,6 +47,15 @@ const StudiosArea = dynamic(() => import('@/components/studio/StudiosArea'), {
   loading: () => <div className="placeholder">Loading studios…</div>,
 });
 
+// Scenario authoring (issue #120): a Cesium-globe authoring surface that emits a
+// runnable SimConfig. It pulls in the same heavy CesiumJS bundle as the 3D Globe
+// tab. Load client-only and only when the "Author" surface is active, so Cesium
+// (already its own code-split chunk) never lands in the first-load JS.
+const ScenarioAuthor = dynamic(() => import('@/components/ScenarioAuthor'), {
+  ssr: false,
+  loading: () => <div className="placeholder">Loading scenario author…</div>,
+});
+
 export default function Home() {
   const [result, setResult] = useState<SimResult | null>(null);
   const [lastConfig, setLastConfig] = useState<SimConfig | null>(null);
@@ -55,8 +64,11 @@ export default function Home() {
   const [mock, setMock] = useState(false);
   const [modeKnown, setModeKnown] = useState(false);
   const [activeTab, setActiveTab] = useState('trajectory');
-  // Top-level surface: the engagement Simulator vs. the interactive Studios.
-  const [area, setArea] = useState<'simulator' | 'studios'>('simulator');
+  // Top-level surface: the engagement Simulator, interactive Studios, or the
+  // globe-based scenario Author (issue #120).
+  const [area, setArea] = useState<'simulator' | 'studios' | 'author'>(
+    'simulator',
+  );
 
   // Warm the WASM module and resolve real-vs-mock on mount.
   useEffect(() => {
@@ -65,6 +77,13 @@ export default function Home() {
       setModeKnown(isResolved());
     });
   }, []);
+
+  // Run a config authored on the globe: switch to the Simulator surface so the
+  // results/tabs render, then fire the normal run flow.
+  async function handleRunAuthored(config: SimConfig) {
+    setArea('simulator');
+    await handleRun(config);
+  }
 
   async function handleRun(config: SimConfig) {
     setRunning(true);
@@ -188,6 +207,15 @@ export default function Home() {
             >
               Studios
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={area === 'author'}
+              className={area === 'author' ? 'segActive' : ''}
+              onClick={() => setArea('author')}
+            >
+              Author
+            </button>
           </div>
         </div>
         <p className="muted">
@@ -203,6 +231,12 @@ export default function Home() {
         // Lazy-mounted: the Studios chunk (registry + studios + Plotly shell)
         // is only fetched/instantiated once this branch renders.
         <StudiosArea />
+      ) : area === 'author' ? (
+        // Lazy-mounted: the Cesium authoring chunk is only fetched/instantiated
+        // once this branch renders, keeping Cesium out of the first-load JS.
+        <div className="card">
+          <ScenarioAuthor onRun={handleRunAuthored} running={running} />
+        </div>
       ) : (
       <div className="shell">
         <ParamForm onRun={handleRun} running={running} />

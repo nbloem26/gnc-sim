@@ -23,6 +23,9 @@ import { environmentStudio } from './environmentStudio';
 // Engagement & analysis
 import { campaignStudio } from './campaignStudio';
 import { uqStudio } from './uqStudio';
+// Adversarial sensing & optimization
+import { eccmStudio } from './eccmStudio';
+import { optimizerStudio } from './optimizerStudio';
 
 registerStudio(exampleStudio);
 registerStudio(radarStudio);
@@ -34,3 +37,5 @@ registerStudio(threatStudio);
 registerStudio(environmentStudio);
 registerStudio(campaignStudio);
 registerStudio(uqStudio);
+registerStudio(eccmStudio);
+registerStudio(optimizerStudio);
