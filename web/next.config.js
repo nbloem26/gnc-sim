@@ -4,6 +4,10 @@ const nextConfig = {
   // so we emit a static SPA that drops straight onto Vercel / any static host.
   output: 'export',
   reactStrictMode: true,
+  // Cesium embeds a WASM module as a binary JS string; Next's SWC minifier serialized it
+  // as a template literal with octal escapes (illegal -> ChunkLoadError at runtime). Terser
+  // escapes it correctly. See the Cesium 3D Globe / Scenario Author chunks.
+  swcMinify: false,
   images: {
     // next/image optimization needs a server; static export uses raw <img>/unoptimized.
     unoptimized: true,
