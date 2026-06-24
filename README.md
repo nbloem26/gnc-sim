@@ -1,5 +1,7 @@
 # gnc-sim
 
+https://gnc-sim.vercel.app/
+
 A guided-interceptor **Guidance, Navigation & Control** simulation: a deterministic C++ core
 (built and tested on Linux) that **also compiles to WebAssembly** and runs **client-side in the
 browser** via a Next.js app on Vercel — adjust inputs, re-run the actual C++ core in your browser,
