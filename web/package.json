@@ -6,7 +6,7 @@
     "predev": "node scripts/sync-scenarios.mjs && node scripts/copy-cesium-assets.mjs",
     "dev": "next dev",
     "prebuild": "node scripts/sync-scenarios.mjs && node scripts/copy-cesium-assets.mjs",
-    "build": "next build",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 next build",
     "start": "next start",
     "lint": "next lint"
   },
