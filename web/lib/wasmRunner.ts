@@ -17,6 +17,34 @@ import { isSimError } from './types';
 // Emscripten module shape we depend on.
 interface GncSimModule {
   run_sim: (configJson: string) => string;
+  // Additive airframe-linearization entry (issue #122). Optional so an older WASM artifact that
+  // predates it still loads (we feature-detect before calling).
+  linearize?: (configJson: string) => string;
+}
+
+/** Trim flight condition for the airframe linearization (issue #122). */
+export interface TrimCondition {
+  mach: number;
+  altitude_m: number;
+  alpha_rad: number;
+}
+
+/**
+ * Result of the real 6DOF airframe+actuator pitch-channel linearization (the WASM `linearize`
+ * entry). Mirrors core/include/gncsim/dynamics/Linearize.hpp.
+ */
+export interface LinearizeResult {
+  a_matrix: [number, number, number, number]; // 2x2 row-major [a00,a01,a10,a11]
+  b_matrix: [number, number]; // 2x1 [b0,b1]
+  omega_n_radps: number;
+  zeta: number;
+  stable: boolean;
+  control_effectiveness_mps2_per_rad: number;
+  q_bar_pa: number;
+  speed_mps: number;
+  iyy_kgm2: number;
+  cm_alpha_per_rad: number;
+  cn_alpha_per_rad: number;
 }
 
 type GncSimFactory = (opts?: Record<string, unknown>) => Promise<GncSimModule>;
@@ -127,6 +155,35 @@ export async function runSim(config: SimConfig): Promise<SimResult> {
 
   // Mock fallback.
   return fetchSampleResult();
+}
+
+/**
+ * Linearize the real 6DOF airframe+actuator pitch channel about a flight condition (issue #122),
+ * via the WASM `linearize` entry. The trim condition rides in an optional top-level `trim` block of
+ * the SAME config JSON the core loader consumes.
+ *
+ * Returns `null` in mock mode (no WASM artifact) or if the loaded module predates the `linearize`
+ * export, so the Controls Studio can gracefully fall back to its reduced-order model.
+ */
+export async function linearizeAirframe(
+  config: SimConfig,
+  trim: TrimCondition,
+): Promise<LinearizeResult | null> {
+  const mod = await getModule();
+  if (!mod || typeof mod.linearize !== 'function') return null;
+
+  const payload = { ...config, trim };
+  const out = mod.linearize(JSON.stringify(payload));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(out);
+  } catch {
+    throw new Error('WASM linearize returned non-JSON output');
+  }
+  if (isSimError(parsed)) {
+    throw new Error(parsed.error);
+  }
+  return parsed as LinearizeResult;
 }
 
 /**

@@ -122,11 +122,28 @@ export interface ControlsModel {
   actuator_travel_limit_deg: number;
   accel_gain_ka: number; // outer accel-loop gain (the kp analogue)
   rate_gain_kr_s: number; // inner rate-loop lead time constant (the kd analogue), seconds
+
+  // --- Real-airframe override (issue #122). When present these come from the WASM `linearize`
+  // entry (the actual 6DOF airframe+actuator Jacobian at a flight condition) and REPLACE the
+  // reduced static-margin → ωn / ζ map below. Absent ⇒ mock fallback to the reduced model. ---
+  airframe_omega_radps?: number; // short-period ωn from the real linearization
+  airframe_zeta?: number; // short-period ζ from the real linearization
 }
 
-/** Airframe short-period natural frequency from the static margin. */
+/** Short-period natural frequency: the real linearization when present, else the reduced map. */
 export function airframeOmegaRadps(model: ControlsModel): number {
+  if (model.airframe_omega_radps !== undefined && model.airframe_omega_radps > 0) {
+    return model.airframe_omega_radps;
+  }
   return SHORT_PERIOD_WN_RADPS_PER_CALIBER * Math.max(model.static_margin_caliber, 1e-3);
+}
+
+/** Short-period damping ratio: the real linearization when present, else the reduced constant. */
+export function airframeZeta(model: ControlsModel): number {
+  if (model.airframe_zeta !== undefined && model.airframe_zeta > 0) {
+    return model.airframe_zeta;
+  }
+  return AIRFRAME_ZETA;
 }
 
 // ── Open-loop frequency response  L(jω) ──────────────────────────────────────
@@ -140,7 +157,8 @@ function plantAt(model: ControlsModel, omega_radps: number): Complex {
   // Airframe: K_af·ωn² / (s² + 2ζωn·s + ωn²)
   const num: Complex = { re: model.control_effectiveness * wn * wn, im: 0 };
   const s2 = cMul(s, s);
-  const den = cAdd(cAdd(s2, { re: 0, im: 2 * AIRFRAME_ZETA * wn * omega_radps }), { re: wn * wn, im: 0 });
+  const zeta = airframeZeta(model);
+  const den = cAdd(cAdd(s2, { re: 0, im: 2 * zeta * wn * omega_radps }), { re: wn * wn, im: 0 });
   const airframe = cDiv(num, den);
   return cMul(act, airframe);
 }
@@ -330,6 +348,7 @@ export interface StepResponse {
  */
 export function computeStepResponse(model: ControlsModel, duration_s = 2.0, dt_s = 0.0005): StepResponse {
   const wn = airframeOmegaRadps(model);
+  const zeta = airframeZeta(model);
   const tau = Math.max(model.actuator_tau_s, 1e-4);
   const Kaf = model.control_effectiveness;
   const Ka = model.accel_gain_ka;
@@ -344,7 +363,7 @@ export function computeStepResponse(model: ControlsModel, duration_s = 2.0, dt_s
     const e = cmd - a;
     const u = Ka * e - Kr * adot; // forward accel gain Ka, inner rate feedback Kr (kp·err − kd·rate)
     const ddelta = (u - delta) / tau;
-    const addot = Kaf * wn * wn * delta - 2 * AIRFRAME_ZETA * wn * adot - wn * wn * a;
+    const addot = Kaf * wn * wn * delta - 2 * zeta * wn * adot - wn * wn * a;
     return [adot, addot, ddelta];
   };
 
